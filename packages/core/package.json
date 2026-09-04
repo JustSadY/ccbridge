@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/bridge.js && node --check src/adapters/claude.js && node --check src/adapters/codex.js"
+    "check": "node --check src/index.js && node --check src/bridge.js && node --check src/adapters/contract.js && node --check src/adapters/loader.js && node --check src/adapters/registry.js && node --check src/adapters/claude.js && node --check src/adapters/codex.js"
   },
   "engines": {
     "node": ">=20"
