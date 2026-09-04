@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {
   defaultGeminiHome,
+  defaultQwenHome,
+  defaultQwenRuntimeHome,
   normalizePathKey,
   windowsPathToWsl,
   wslPathToWindows
@@ -25,4 +27,14 @@ test("Gemini CLI home respects GEMINI_CLI_HOME as the home root", () => {
     defaultGeminiHome({ env: { GEMINI_CLI_HOME: "/custom/gemini-home" }, home: "/ignored" }),
     path.join("/custom/gemini-home", ".gemini")
   );
+});
+
+test("Qwen home defaults to .qwen and honors QWEN_HOME", () => {
+  assert.equal(defaultQwenHome({ env: {}, home: "/home/example" }), path.resolve("/home/example/.qwen"));
+  assert.equal(defaultQwenHome({ env: { QWEN_HOME: "/data/qwen-home" }, home: "/home/example" }), path.resolve("/data/qwen-home"));
+});
+
+test("Qwen runtime home defaults to Qwen home and QWEN_RUNTIME_DIR wins", () => {
+  assert.equal(defaultQwenRuntimeHome({ env: { QWEN_HOME: "/data/qwen-home" }, home: "/home/example" }), path.resolve("/data/qwen-home"));
+  assert.equal(defaultQwenRuntimeHome({ env: { QWEN_HOME: "/data/qwen-home", QWEN_RUNTIME_DIR: "/runtime/qwen" }, home: "/home/example" }), path.resolve("/runtime/qwen"));
 });
