@@ -12,6 +12,22 @@ function sessionWithReasoning() {
 function textOnlySession() {
   return { schemaVersion: 1, id: "s2", title: null, cwd: "/work", startedAt: null, updatedAt: null, source: { adapter: "source", sessionId: "s2", path: null }, messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }, { role: "assistant", content: [{ type: "text", text: "hello" }] }], metadata: {}, events: [], lossless: { enabled: true } };
 }
+function sessionWithNestedMetadata() {
+  return {
+    schemaVersion: 1,
+    id: "s3",
+    title: null,
+    cwd: "/work",
+    startedAt: null,
+    updatedAt: null,
+    source: { adapter: "source", sessionId: "s3", path: null },
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }], metadata: { lineage: { parent: "p1" } } }],
+    agents: [{ id: "a1", metadata: { depth: 1 }, messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], metadata: { runId: "r1" } }], events: [] }],
+    metadata: { providerState: true },
+    events: [],
+    lossless: { enabled: true }
+  };
+}
 
 test("strict lossless blocks before a portable target write when reasoning would be lost", async () => {
   let writes = 0;
@@ -56,4 +72,13 @@ test("strict lossless falls back from remapped native to an exact portable route
   assert.equal(result.route, "portable");
   assert.equal(result.strictFallback, "portable");
   assert.equal(result.preservation.targetClass, "portable");
+});
+
+test("strict lossless blocks nested metadata loss before a portable target write", async () => {
+  let writes = 0;
+  const source = { id: "source", name: "Source", capabilities: { losslessRead: true }, async readSession() { return sessionWithNestedMetadata(); } };
+  const target = { id: "target", name: "Target", portableSupport: { text: true, subagent: true, metadata: false }, async writePortableSession() { writes += 1; } };
+  const bridge = new SessionBridge(new AdapterRegistry().register(source).register(target));
+  await assert.rejects(() => bridge.transfer({ from: "source", to: "target", session: "s3", strictLossless: true }), /session\/message\/agent metadata/);
+  assert.equal(writes, 0);
 });
