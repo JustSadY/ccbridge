@@ -57,7 +57,7 @@ async function portableToOpenCode(session, cwd) {
 }
 
 export class OpenCodeAdapter extends BaseOpenCodeAdapter {
-  constructor(options = {}) { super(options); this.portableSupport = { ...this.portableSupport, attachment: true, metadata: false }; }
+  constructor(options = {}) { super(options); this.portableSupport = { ...this.portableSupport, attachment: true, system: false, metadata: false }; }
   #runExport(sessionRef) {
     const result = this.runner(this.command, ["export", String(sessionRef)], { encoding: "utf8", windowsHide: true });
     if (result?.error || result?.status !== 0) throw new Error(`${this.command} export ${sessionRef} failed: ${String(result?.stderr || result?.error?.message || "unknown error").trim()}`);
