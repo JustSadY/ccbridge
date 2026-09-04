@@ -1,0 +1,18 @@
+{
+  "name": "@ccbridge/core",
+  "version": "0.1.0",
+  "description": "Extensible core SDK for discovering, reading and transferring local coding-agent sessions",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/index.js && node --check src/bridge.js && node --check src/adapters/claude.js && node --check src/adapters/codex.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
