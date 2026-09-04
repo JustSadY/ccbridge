@@ -49,7 +49,7 @@ export class KiloCodeAdapter {
     this.name = "Kilo Code";
     this.aliases = ["kilo", "kilocode"];
     this.capabilities = { discover: true, read: true, write: true, nativeExport: true, nativeImport: true, losslessRead: true };
-    this.portableSupport = { text: true, toolCall: true, toolResult: true, system: true, reasoning: false, attachment: true, unknownContent: false, rawEvent: false, metadata: false };
+    this.portableSupport = { text: true, toolCall: true, toolResult: true, system: false, reasoning: false, attachment: true, unknownContent: false, rawEvent: false, metadata: false };
     this.nativeExports = ["kilo/session-json", "kilo/legacy-task-files-v1"];
     this.nativeImports = ["kilo/session-json", "opencode/session-json"];
     this.losslessNativeImports = [];
