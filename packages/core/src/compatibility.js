@@ -6,7 +6,8 @@ const BUILTIN_CONTRACTS = {
   "antigravity-cli": { contractVersion: 1, sourceFormats: ["antigravity-cli/conversation-sqlite-v1"], recordKinds: ["sqlite-container"], recordKindPrefixes: [], contentTypes: [], preserveUnknownRecords: true, opaque: true, testedVersions: [] },
   aider: { contractVersion: 1, sourceFormats: ["aider/chat-history-markdown-v1"], recordKinds: ["markdown-section"], recordKindPrefixes: [], contentTypes: ["text"], preserveUnknownRecords: true, presentationOriented: true, testedVersions: [] },
   cline: { contractVersion: 1, sourceFormats: ["cline/messages-json-v1"], recordKinds: [], recordKindPrefixes: ["message:"], contentTypes: ["text", "tool-call", "tool-result", "reasoning"], preserveUnknownRecords: true, testedVersions: [] },
-  "roo-code": { contractVersion: 1, sourceFormats: ["roo-code/api-conversation-history-v1"], recordKinds: [], recordKindPrefixes: ["api-message:"], contentTypes: ["text", "tool-call", "tool-result", "reasoning", "attachment"], preserveUnknownRecords: true, archivedUpstream: true, testedVersions: [] }
+  "roo-code": { contractVersion: 1, sourceFormats: ["roo-code/api-conversation-history-v1"], recordKinds: [], recordKindPrefixes: ["api-message:"], contentTypes: ["text", "tool-call", "tool-result", "reasoning", "attachment"], preserveUnknownRecords: true, archivedUpstream: true, testedVersions: [] },
+  continue: { contractVersion: 1, sourceFormats: ["continue/session-transcript-markdown-v1"], recordKinds: [], recordKindPrefixes: ["markdown:"], contentTypes: ["text"], preserveUnknownRecords: true, presentationOriented: true, exportOnly: true, testedVersions: [] }
 };
 
 function unique(values) { return [...new Set(values.filter((value) => value !== null && value !== undefined).map(String))].sort(); }
@@ -41,7 +42,7 @@ export async function checkAdapterCompatibility(adapter, options = {}) {
     rawEventCount: (session.events?.length ?? 0) + (session.agents ?? []).reduce((sum, agent) => sum + (agent.events?.length ?? 0), 0),
     messageCount: (session.messages?.length ?? 0) + (session.agents ?? []).reduce((sum, agent) => sum + (agent.messages?.length ?? 0), 0),
     agentCount: session.agents?.length ?? 0, driftDetected,
-    note: unknownRecordKinds.length && contract?.preserveUnknownRecords ? "Unknown raw records are preserved losslessly, but semantic parsing coverage should be reviewed." : contract?.presentationOriented ? "Source history is presentation-oriented; semantic role classification is best-effort while the raw section is preserved." : contract?.archivedUpstream ? "Upstream project is archived; compatibility is pinned to the last documented storage contract." : null
+    note: unknownRecordKinds.length && contract?.preserveUnknownRecords ? "Unknown raw records are preserved losslessly, but semantic parsing coverage should be reviewed." : contract?.presentationOriented ? "Source history is presentation-oriented; semantic role classification is best-effort while the raw section is preserved." : contract?.archivedUpstream ? "Upstream project is archived; compatibility is pinned to the last documented storage contract." : contract?.exportOnly ? "Adapter reads the provider's explicit export artifact; private live-session storage is intentionally not assumed." : null
   };
   return report;
 }
