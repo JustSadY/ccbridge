@@ -58,11 +58,14 @@ async function walkSessionJsonl(root) {
 }
 
 function projectDirForSession(file) {
-  const parts = path.normalize(file).split(path.sep);
-  const chats = parts.lastIndexOf("chats");
-  if (chats <= 0) return path.dirname(path.dirname(file));
-  const prefix = parts.slice(0, chats).join(path.sep);
-  return path.isAbsolute(file) && !prefix.startsWith(path.sep) ? `${path.sep}${prefix}` : prefix;
+  let dir = path.dirname(path.resolve(file));
+  while (true) {
+    if (path.basename(dir) === "chats") return path.dirname(dir);
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.dirname(path.dirname(path.resolve(file)));
 }
 
 function eventKind(record) {
