@@ -18,13 +18,43 @@
     path: "/optional/native/source/path"
   },
   messages: [],
+  agents: [],
   metadata: {},
   events: [],
   lossless: null
 }
 ```
 
-Required fields remain `schemaVersion`, `id`, `source.adapter`, `messages` and `events`. Portable readers normally return `events: []` and `lossless: null`.
+Required fields are `schemaVersion`, `id`, `source.adapter`, `messages`, `agents` and `events`. Portable readers normally return `events: []`, `agents: []` when no child agents exist, and `lossless: null`.
+
+## Agent tree
+
+Child-agent history is kept separate from the root message stream rather than being flattened into fake chat messages:
+
+```js
+{
+  id: "reviewer-a1",
+  parentId: null,
+  name: "security-reviewer",
+  kind: "subagent",
+  startedAt: "...",
+  updatedAt: "...",
+  source: {
+    adapter: "claude-code",
+    sessionId: "reviewer-a1",
+    path: ".../subagents/agent-reviewer-a1.jsonl"
+  },
+  messages: [],
+  events: [],
+  metadata: {}
+}
+```
+
+`parentId: null` means the agent belongs directly to the root session. A provider may set `parentId` when nested-agent parent identity is available. Workflow/team identifiers and provider-specific metadata remain in `metadata`.
+
+Targets that do not support agent trees must not silently claim to preserve them. Fidelity reports expose agent-tree history as its own feature; in lossless mode unsupported agent trees remain available in the `.ccbridge` archive.
+
+Claude Code currently discovers normal subagents and workflow subagents beneath the parent session's `subagents/` directory. Subagent JSONL files are not exposed as duplicate top-level sessions.
 
 ## Portable mode
 
@@ -56,7 +86,7 @@ Portable mode carries normalized user-visible context such as text, attachments,
 
 Adapters may provide attachment bytes inline (`data`), through a readable local `path`, or only as a `uri` reference. ccbridge does not fetch arbitrary remote URLs during archive creation.
 
-When a `.ccbridge` v2 archive is written, readable attachment bytes are stored as dedicated `attachments/...` entries. The serialized `portable/session.json` references those entries instead of duplicating the inline payload. On archive read, verified bytes are reattached to the in-memory portable attachment so a target writer can import them. `materializeCcbridgeAttachments()` can additionally create temporary private files for targets that require paths.
+When a `.ccbridge` v2 archive is written, readable root and subagent attachment bytes are stored as dedicated integrity-checked entries. Subagent assets use paths such as `attachments/agents/<agent-id>/...`. `materializeCcbridgeAttachments()` can create temporary private files for targets that require paths.
 
 ## Lossless mode
 
@@ -66,7 +96,7 @@ A source adapter that supports lossless reads may be called with:
 await adapter.readSession(ref, { mode: "lossless" });
 ```
 
-The returned session should set:
+The returned session can set fields such as:
 
 ```js
 {
@@ -75,12 +105,13 @@ The returned session should set:
     sourceFormat: "vendor/session-jsonl",
     rawRecordCount: 42,
     includesProviderReasoning: true,
-    includesUnknownEvents: true
+    includesUnknownEvents: true,
+    includesSubagents: true
   }
 }
 ```
 
-and populate `events` with source-native records in original order.
+Root `events` and each agent's `events` preserve source-native records in original order when available.
 
 ### Raw event
 
@@ -120,9 +151,9 @@ Tool calls and tool results are historical context. Importing a transferred sess
 
 ## Lossless archive
 
-Lossless transfers use the universal versioned `.ccbridge` archive. The archive keeps the normalized session, raw events, readable attachments and optional source-native artifacts as independent integrity-checked entries. See [ARCHIVE.md](ARCHIVE.md).
+Lossless transfers use the universal versioned `.ccbridge` archive. The archive keeps the normalized session, root/subagent raw events, readable attachments and optional source-native artifacts as integrity-checked data. See [ARCHIVE.md](ARCHIVE.md).
 
-Lossless archives may include prompts, private provider reasoning, tool output, file content, system events, signatures, local paths and opaque product metadata. Treat them as sensitive files.
+Lossless archives may include prompts, private provider reasoning, tool output, file content, system events, signatures, local paths, subagent transcripts and opaque product metadata. Treat them as sensitive files.
 
 ## Native routes vs portable routes
 
