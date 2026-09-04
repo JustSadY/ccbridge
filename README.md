@@ -43,51 +43,44 @@ ccbridge plan claude codex <session-id>
 ccbridge transfer claude codex <session-id> --dry-run
 ```
 
+## Universal `.ccbridge` archive
+
+Export a reusable archive:
+
+```bash
+ccbridge export claude <session-id> --output ./session.ccbridge
+```
+
+`export` defaults to lossless mode. The archive stores the `PortableSession` and, when the source adapter exposes one, embeds the original native session file as well.
+
+Restore later, even if the original source session file no longer exists:
+
+```bash
+ccbridge import ./session.ccbridge codex --cwd /path/to/project --dry-run
+ccbridge import ./session.ccbridge codex --cwd /path/to/project
+```
+
+Import routing prefers an explicitly compatible embedded native format and falls back to `PortableSession` when the target implements a portable writer. See [docs/ARCHIVE.md](docs/ARCHIVE.md).
+
 ## Portable vs lossless
 
-`ccbridge` has two read/transfer modes.
-
-### Portable (default)
+Portable mode is the default for inspect/transfer:
 
 ```bash
 ccbridge inspect claude <session-id>
 ccbridge transfer claude codex <session-id>
 ```
 
-Portable mode keeps normalized conversation text, tool calls and tool results. Provider-private reasoning/thinking is not exposed in this mode.
-
-### Lossless
+Lossless mode preserves source-private thinking/reasoning, raw events, signatures, system/progress records, tool metadata, checkpoints/rewinds and unknown records:
 
 ```bash
-ccbridge inspect claude <session-id> --mode lossless
-ccbridge inspect codex <session-id> --all
-ccbridge inspect gemini <session-id> --all
-
-ccbridge transfer claude codex <session-id> --all --dry-run
+ccbridge inspect claude <session-id> --all
 ccbridge transfer claude codex <session-id> --all
 ```
 
 `--all` is shorthand for `--mode lossless`.
 
-Lossless mode preserves all JSON session records that the source adapter can read, including provider thinking/reasoning payloads, signatures or opaque reasoning fields, system/progress records, metadata updates, rewinds, tool metadata and unknown event types.
-
-Provider-specific reasoning is never blindly rewritten into another provider's native reasoning field. Those fields may be signed, encrypted or schema-validated. Instead, ccbridge passes through whatever the target natively supports and writes a lossless sidecar bundle containing the complete source representation.
-
-Default bundle location:
-
-```text
-~/.ccbridge/lossless/*.ccbridge.json
-```
-
-Override the path:
-
-```bash
-ccbridge transfer claude codex <session-id> \
-  --all \
-  --bundle ./session-backup.ccbridge.json
-```
-
-Lossless bundles can contain sensitive prompts, reasoning, tool output, file contents, paths, signatures and other provider data. They are created with restrictive file permissions where the operating system supports them.
+Lossless transfer sidecars are universal `.ccbridge` archives, so they can be reused for later import rather than acting as one-way backup JSON.
 
 ## External adapters
 
@@ -104,23 +97,7 @@ Multiple adapter packages can be loaded with repeated `--plugin` flags or with:
 CCBRIDGE_PLUGINS=@example/ccbridge-opencode,./local-adapter.js ccbridge adapters
 ```
 
-See [docs/ADAPTERS.md](docs/ADAPTERS.md) for the adapter/plugin contract and [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md) for the interchange/lossless model.
-
-## Transfer routing
-
-Transfers are planned generically:
-
-```text
-source adapter
-    |
-    +-- compatible native format --> target native importer
-    |
-    +-- PortableSession -----------> target portable writer
-    |
-    `-- no compatible route -------> explicit error
-```
-
-In lossless mode, the source is additionally read into a lossless `PortableSession` and persisted as a ccbridge bundle after a successful transfer. A native import therefore does not have to understand every source-private event for the original data to remain recoverable.
+See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), and [docs/ARCHIVE.md](docs/ARCHIVE.md).
 
 ## Local stores
 
@@ -130,35 +107,31 @@ Built-in defaults:
 Claude Code: ~/.claude/projects/**/*.jsonl
 Codex:       ~/.codex/sessions/**/*.jsonl
 Gemini CLI:  ~/.gemini/tmp/**/chats/*.{json,jsonl}
-ccbridge:    ~/.ccbridge/lossless/*.ccbridge.json
+ccbridge:    ~/.ccbridge/archives/*.ccbridge
 ```
 
-Environment overrides are respected:
+Environment overrides:
 
 ```text
 CLAUDE_CONFIG_DIR
 CODEX_HOME
-GEMINI_CLI_HOME  # home root; Gemini state is under <GEMINI_CLI_HOME>/.gemini
-CCBRIDGE_HOME    # ccbridge bundle/config root
+GEMINI_CLI_HOME
+CCBRIDGE_HOME
 ```
 
 Windows and Linux are supported runtime targets. Platform-specific handling is limited to filesystem/storage differences; the session and transfer architecture are operating-system agnostic.
 
 ## Safety
 
-Use either command to inspect the route before an import:
+Inspect a route before import:
 
 ```bash
 ccbridge plan <from> <to> <session>
 ccbridge transfer <from> <to> <session> --dry-run
+ccbridge import ./session.ccbridge <target> --dry-run
 ```
 
-For lossless transfers:
-
-```bash
-ccbridge plan <from> <to> <session> --all
-ccbridge transfer <from> <to> <session> --all --dry-run
-```
+Lossless archives can contain sensitive prompts, reasoning, tool output and file content. They are written with restrictive permissions where supported.
 
 ## Status
 
