@@ -4,6 +4,7 @@ import { CodexAdapter } from "./adapters/codex.js";
 import { GeminiCliAdapter } from "./adapters/gemini.js";
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import { AntigravityCliAdapter } from "./adapters/antigravity.js";
+import { AiderAdapter } from "./adapters/aider.js";
 import { registerAdapterModules } from "./adapters/loader.js";
 import { SessionBridge } from "./bridge.js";
 export { AdapterRegistry } from "./adapters/registry.js";
@@ -12,6 +13,7 @@ export { CodexAdapter } from "./adapters/codex.js";
 export { GeminiCliAdapter } from "./adapters/gemini.js";
 export { OpenCodeAdapter } from "./adapters/opencode.js";
 export { AntigravityCliAdapter } from "./adapters/antigravity.js";
+export { AiderAdapter } from "./adapters/aider.js";
 export { SessionBridge } from "./bridge.js";
 export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
 export { BUILTIN_COMPATIBILITY_CONTRACTS, adapterCompatibilityContract, checkAdapterCompatibility, compatibilityReport } from "./compatibility.js";
@@ -29,6 +31,6 @@ export { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, defaultCcbridgeHome,
 export { extractProvenanceArchive, forkCcbridgeArchive, forkPortableSession, mergeCcbridgeArchives, mergePortableSessions } from "./session-ops.js";
 export { detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, defaultAntigravityCliHome, normalizePathKey, windowsPathToWsl, wslPathToWindows } from "./platform/paths.js";
 export { TARGET_PROFILES, applyCwdMappings, normalizeCwdMappings, parseCwdMapping, resolveTargetCwd, resolveTargetCwdDetailed } from "./platform/cwd-map.js";
-export function createDefaultRegistry(options = {}) { const registry = new AdapterRegistry(); registry.register(new ClaudeCodeAdapter(options.claude)); registry.register(new CodexAdapter(options.codex)); registry.register(new GeminiCliAdapter(options.gemini)); registry.register(new OpenCodeAdapter(options.opencode)); registry.register(new AntigravityCliAdapter(options.antigravity)); return registry; }
+export function createDefaultRegistry(options = {}) { const registry = new AdapterRegistry(); registry.register(new ClaudeCodeAdapter(options.claude)); registry.register(new CodexAdapter(options.codex)); registry.register(new GeminiCliAdapter(options.gemini)); registry.register(new OpenCodeAdapter(options.opencode)); registry.register(new AntigravityCliAdapter(options.antigravity)); registry.register(new AiderAdapter(options.aider)); return registry; }
 export function createDefaultBridge(options = {}) { return new SessionBridge(createDefaultRegistry(options)); }
 export async function createBridgeWithPlugins(options = {}) { const registry = createDefaultRegistry(options); await registerAdapterModules(registry, options.plugins ?? [], options.pluginOptions ?? {}); return new SessionBridge(registry); }
