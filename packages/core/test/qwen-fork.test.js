@@ -32,8 +32,8 @@ async function fixture() {
   const chats = path.join(projectDir, "chats");
   await fs.mkdir(chats, { recursive: true });
   await fs.writeFile(path.join(chats, `${sessionId}.jsonl`), [
-    record({ uuid: "root-u", parentUuid: null, type: "user", message: { role: "user", parts: [{ text: "parent task" }] } }),
-    record({ uuid: "root-a", parentUuid: "root-u", type: "assistant", message: { role: "model", parts: [{ text: "parent answer" }] } })
+    record({ uuid: "root-u", parentUuid: null, type: "user", provenance: "real_user", forkedFrom: { sessionId: "parent-session", messageUuid: "root-u" }, message: { role: "user", parts: [{ text: "parent task" }] } }),
+    record({ uuid: "root-a", parentUuid: "root-u", type: "assistant", provenance: "assistant_output", contextWindowSize: 131072, message: { role: "model", parts: [{ text: "parent answer" }] } })
   ].map(JSON.stringify).join("\n") + "\n", "utf8");
 
   const subagents = path.join(projectDir, "subagents", sessionId);
@@ -97,6 +97,11 @@ async function fixture() {
       timestamp: "2026-09-04T12:01:03.000Z",
       agentId: "fork-1",
       agentName: "fork",
+      agentColor: "blue",
+      agentRunId: "run-7",
+      agentRound: 2,
+      provenance: "assistant_output",
+      goalContext: { goalId: "goal-1", revision: 3, turnId: "turn-2" },
       isSidechain: true,
       message: { role: "model", parts: [{ text: "runtime answer" }] }
     })
@@ -111,6 +116,8 @@ test("Qwen fork subagent portable history matches resume bootstrap semantics", a
   const session = await adapter.readSession(sessionId, { mode: "portable" });
   assert.equal(session.metadata.qwenForkBootstrapAgentCount, 1);
   assert.equal(session.agents.length, 1);
+  assert.deepEqual(session.messages[0].metadata.qwenRecord.forkedFrom, { sessionId: "parent-session", messageUuid: "root-u" });
+  assert.equal(session.messages[1].metadata.qwenRecord.contextWindowSize, 131072);
   const agent = session.agents[0];
   assert.equal(agent.metadata.qwenForkBootstrap.enabled, true);
   assert.equal(agent.metadata.qwenForkBootstrap.inheritedMessageCount, 2);
@@ -119,6 +126,11 @@ test("Qwen fork subagent portable history matches resume bootstrap semantics", a
   assert.deepEqual(text, ["bootstrap user", "bootstrap answer", "Begin fork task.", "runtime answer"]);
   assert.equal(JSON.stringify(agent.messages).includes("visible launch seed"), false);
   assert.equal(JSON.stringify(agent.messages).includes("bootstrap private"), false);
+  const runtime = agent.messages.at(-1);
+  assert.equal(runtime.metadata.qwenRecord.agentRunId, "run-7");
+  assert.equal(runtime.metadata.qwenRecord.agentRound, 2);
+  assert.equal(runtime.metadata.qwenRecord.agentColor, "blue");
+  assert.deepEqual(runtime.metadata.qwenRecord.goalContext, { goalId: "goal-1", revision: 3, turnId: "turn-2" });
 });
 
 test("Qwen fork subagent lossless history keeps bootstrap thinking and recomputes flags", async () => {
