@@ -1,16 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readJsonl } from "../io/jsonl.js";
-import { createPortableSession, textContent, toolCallContent, toolResultContent } from "../model.js";
+import {
+  createPortableSession,
+  normalizeTransferMode,
+  rawEvent,
+  reasoningContent,
+  textContent,
+  toolCallContent,
+  toolResultContent
+} from "../model.js";
 import { defaultClaudeHome } from "../platform/paths.js";
 import { pathExists, walkFiles } from "./fs-utils.js";
 
-function flattenClaudeContent(content) {
+function flattenClaudeContent(content, options = {}) {
   if (typeof content === "string") {
     return content ? [textContent(content)] : [];
   }
   if (!Array.isArray(content)) return [];
 
+  const lossless = options.mode === "lossless";
   const output = [];
   for (const item of content) {
     if (!item || typeof item !== "object") continue;
@@ -24,8 +33,14 @@ function flattenClaudeContent(content) {
         output: item.content ?? null,
         isError: item.is_error ?? false
       }));
+    } else if (lossless && item.type === "thinking") {
+      output.push(reasoningContent({
+        provider: "claude-code",
+        text: typeof item.thinking === "string" ? item.thinking : null,
+        signature: item.signature ?? null,
+        raw: item
+      }));
     }
-    // Provider-private thinking/signatures intentionally do not cross adapter boundaries.
   }
   return output;
 }
@@ -43,7 +58,7 @@ export class ClaudeCodeAdapter {
     this.id = "claude-code";
     this.name = "Claude Code";
     this.aliases = ["claude", "cc"];
-    this.capabilities = { discover: true, read: true, write: false, nativeExport: true, nativeImport: false };
+    this.capabilities = { discover: true, read: true, write: false, nativeExport: true, nativeImport: false, losslessRead: true };
     this.nativeExports = ["claude-code/session-jsonl"];
     this.home = options.home ?? defaultClaudeHome(options);
   }
@@ -80,9 +95,11 @@ export class ClaudeCodeAdapter {
     return sessions;
   }
 
-  async readSession(sessionRef) {
+  async readSession(sessionRef, options = {}) {
+    const mode = normalizeTransferMode(options.mode ?? "portable");
     const sessionPath = await this.resolveSession(sessionRef);
     const messages = [];
+    const events = [];
     let sessionId = path.basename(sessionPath, ".jsonl");
     let cwd = null;
     let startedAt = null;
@@ -90,8 +107,20 @@ export class ClaudeCodeAdapter {
     let gitBranch = null;
     let claudeVersion = null;
     let title = null;
+    let index = 0;
 
     for await (const { value: record } of readJsonl(sessionPath)) {
+      if (mode === "lossless") {
+        events.push(rawEvent({
+          index,
+          provider: this.id,
+          kind: record?.type ?? "unknown",
+          timestamp: record?.timestamp ?? null,
+          data: record
+        }));
+      }
+      index += 1;
+
       sessionId = record.sessionId ?? sessionId;
       cwd = record.cwd ?? cwd;
       gitBranch = record.gitBranch ?? gitBranch;
@@ -100,7 +129,7 @@ export class ClaudeCodeAdapter {
       updatedAt = record.timestamp ?? updatedAt;
 
       if (record.type !== "user" && record.type !== "assistant") continue;
-      const content = flattenClaudeContent(record.message?.content);
+      const content = flattenClaudeContent(record.message?.content, { mode });
       if (content.length === 0) continue;
 
       const role = record.type === "assistant" ? "assistant" : "user";
@@ -130,7 +159,15 @@ export class ClaudeCodeAdapter {
       updatedAt,
       source: { adapter: this.id, sessionId, path: sessionPath },
       messages,
-      metadata: { gitBranch, claudeVersion }
+      metadata: { gitBranch, claudeVersion },
+      events,
+      lossless: mode === "lossless" ? {
+        enabled: true,
+        sourceFormat: "claude-code/session-jsonl",
+        rawRecordCount: events.length,
+        includesProviderReasoning: true,
+        includesUnknownEvents: true
+      } : null
     });
   }
 

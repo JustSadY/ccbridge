@@ -1,8 +1,6 @@
 # PortableSession v1
 
-`PortableSession` is the provider-neutral interchange model used when a lossless native import route is unavailable.
-
-It is intentionally smaller than any one agent's private transcript schema. Adapters should preserve useful user-visible context while avoiding provider-private reasoning payloads and signatures.
+`PortableSession` is the provider-neutral interchange model used by ccbridge. Version 1 now supports two operating modes without changing the schema version: normal portable conversion and additive lossless preservation.
 
 ## Session
 
@@ -20,84 +18,112 @@ It is intentionally smaller than any one agent's private transcript schema. Adap
     path: "/optional/native/source/path"
   },
   messages: [],
-  metadata: {}
+  metadata: {},
+  events: [],
+  lossless: null
 }
 ```
 
-Required fields:
+Required fields remain:
 
 - `schemaVersion` — currently `1`.
 - `id` — portable session identifier.
 - `source.adapter` — canonical adapter id.
-- `messages` — ordered message array.
+- `messages` — ordered normalized message array.
 
-Paths are informational unless the target adapter explicitly uses them. Adapters must not assume that a source path exists on another machine.
+`events` and `lossless` are additive fields. Portable readers normally return `events: []` and `lossless: null`.
 
-## Message
+## Portable mode
+
+Portable mode is the default. It carries normalized user-visible context such as text, tool calls, tool results and safe adapter metadata. Provider-private thinking/reasoning is not exposed in portable mode.
+
+## Lossless mode
+
+A source adapter that supports lossless reads may be called with:
 
 ```js
-{
-  id: "optional-native-message-id",
-  parentId: "optional-parent-id",
-  role: "user",
-  createdAt: "2026-09-04T07:01:00.000Z",
-  content: [],
-  metadata: {}
-}
+await adapter.readSession(ref, { mode: "lossless" });
 ```
 
-Typical roles are:
-
-- `user`
-- `assistant`
-- `system`
-- `tool`
-
-Adapters may retain an unfamiliar role when dropping it would lose useful context. Target adapters decide how unsupported roles are represented.
-
-## Text content
+The returned session should set:
 
 ```js
 {
-  type: "text",
-  text: "Visible message text"
-}
-```
-
-## Tool call
-
-```js
-{
-  type: "tool-call",
-  id: "call-id",
-  name: "read_file",
-  input: {
-    path: "src/index.js"
+  lossless: {
+    enabled: true,
+    sourceFormat: "vendor/session-jsonl",
+    rawRecordCount: 42,
+    includesProviderReasoning: true,
+    includesUnknownEvents: true
   }
 }
 ```
 
-A tool call in a portable session is historical context. Importing it must not automatically execute the original command/tool.
+and populate `events` with source-native records in original order.
 
-## Tool result
+### Raw event
 
 ```js
 {
-  type: "tool-result",
-  callId: "call-id",
-  output: "tool output or structured data",
-  isError: false
+  index: 12,
+  provider: "example-agent",
+  kind: "progress",
+  timestamp: "2026-09-04T07:02:00.000Z",
+  data: {
+    // original parsed provider record, unchanged
+  }
 }
 ```
 
-## What is intentionally excluded
+Unknown records should be preserved instead of discarded when lossless mode is active.
 
-Portable conversion should not carry provider-private chain-of-thought/reasoning blobs, reasoning signatures, authentication material or opaque fields whose semantics are unknown.
+## Reasoning content
 
-Adapters may retain safe product-specific information under `metadata`, but another adapter must be able to ignore that metadata without breaking the session.
+Reasoning entries are emitted only in lossless mode:
+
+```js
+{
+  type: "reasoning",
+  provider: "example-agent",
+  text: "provider reasoning text or null",
+  summary: null,
+  signature: null,
+  encrypted: null,
+  raw: {}
+}
+```
+
+The fields intentionally accommodate different provider formats. Some products expose plaintext thinking, others summaries, signatures, encrypted/opaque content or only structured reasoning records.
+
+A target adapter must not assume that a source provider's reasoning object can be inserted into the target provider's reasoning field. Signed/encrypted/provider-validated data should be treated as preserved historical data unless the target explicitly documents compatible import semantics.
+
+## Tool history
+
+Tool calls and tool results remain historical context. Importing a transferred session must not automatically re-execute the original command or tool.
+
+## Lossless bundle
+
+When a transfer is run with `mode: "lossless"`, ccbridge writes a sidecar bundle after the target transfer succeeds:
+
+```js
+{
+  format: "ccbridge/lossless-session",
+  version: 1,
+  createdAt: "...",
+  from: "claude-code",
+  to: "codex",
+  session: {
+    // complete lossless PortableSession
+  }
+}
+```
+
+The default path is under `~/.ccbridge/lossless/`; `CCBRIDGE_HOME` or the CLI `--bundle` option can override it.
+
+Lossless bundles may include prompts, private provider reasoning, tool output, file content, system events, signatures, local paths and opaque product metadata. Treat them as sensitive files.
 
 ## Native routes vs portable routes
 
-The bridge prefers a native route only when the target explicitly accepts the source artifact format. Otherwise it uses `PortableSession` when both adapters support it.
+The bridge still prefers a compatible native route when available. In lossless mode it also reads the complete source representation and creates a bundle, because a native target importer may legitimately discard source-private fields it cannot represent.
 
-This means adding a new adapter does not require editing existing adapters. It only needs to implement the relevant source/target operations and declare the native formats it understands.
+This gives two independent guarantees: the target receives the best import route it supports, and the original source data remains preserved for later replay, conversion or a future adapter with richer capabilities.

@@ -2,12 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readJsonl } from "../io/jsonl.js";
-import { createPortableSession, textContent, toolCallContent, toolResultContent } from "../model.js";
+import {
+  createPortableSession,
+  normalizeTransferMode,
+  rawEvent,
+  reasoningContent,
+  textContent,
+  toolCallContent,
+  toolResultContent
+} from "../model.js";
 import { defaultCodexHome } from "../platform/paths.js";
 import { CodexAppServerClient } from "../codex/app-server-client.js";
 import { pathExists, walkFiles } from "./fs-utils.js";
 
-function responseItemContent(payload) {
+function responseItemContent(payload, options = {}) {
   if (!payload || typeof payload !== "object") return [];
 
   if (payload.type === "message") {
@@ -32,6 +40,16 @@ function responseItemContent(payload) {
     return [toolResultContent({ callId: payload.call_id, output: payload.output })];
   }
 
+  if (options.mode === "lossless" && payload.type === "reasoning") {
+    return [reasoningContent({
+      provider: "codex",
+      text: typeof payload.content === "string" ? payload.content : null,
+      summary: payload.summary ?? null,
+      encrypted: payload.encrypted_content ?? payload.encryptedContent ?? null,
+      raw: payload
+    })];
+  }
+
   return [];
 }
 
@@ -40,7 +58,7 @@ export class CodexAdapter {
     this.id = "codex";
     this.name = "OpenAI Codex";
     this.aliases = ["openai-codex"];
-    this.capabilities = { discover: true, read: true, write: false, nativeExport: false, nativeImport: true };
+    this.capabilities = { discover: true, read: true, write: false, nativeExport: false, nativeImport: true, losslessRead: true };
     this.nativeImports = ["claude-code/session-jsonl"];
     this.home = options.home ?? defaultCodexHome(options);
     this.command = options.command ?? "codex";
@@ -82,7 +100,8 @@ export class CodexAdapter {
     return sessions;
   }
 
-  async readSession(sessionRef) {
+  async readSession(sessionRef, options = {}) {
+    const mode = normalizeTransferMode(options.mode ?? "portable");
     const sessionPath = await this.resolveSession(sessionRef);
     let id = path.basename(sessionPath, ".jsonl");
     let cwd = null;
@@ -90,8 +109,21 @@ export class CodexAdapter {
     let updatedAt = null;
     let title = null;
     const messages = [];
+    const events = [];
+    let index = 0;
 
     for await (const { value: record } of readJsonl(sessionPath)) {
+      if (mode === "lossless") {
+        events.push(rawEvent({
+          index,
+          provider: this.id,
+          kind: record?.type ?? "unknown",
+          timestamp: record?.timestamp ?? null,
+          data: record
+        }));
+      }
+      index += 1;
+
       startedAt ??= record.timestamp ?? null;
       updatedAt = record.timestamp ?? updatedAt;
 
@@ -103,9 +135,15 @@ export class CodexAdapter {
       if (record.type !== "response_item") continue;
 
       const payload = record.payload;
-      const content = responseItemContent(payload);
+      const content = responseItemContent(payload, { mode });
       if (!content.length) continue;
-      const role = payload?.role === "assistant" ? "assistant" : payload?.role === "user" ? "user" : "tool";
+      const role = payload?.type === "reasoning"
+        ? "assistant"
+        : payload?.role === "assistant"
+          ? "assistant"
+          : payload?.role === "user"
+            ? "user"
+            : "tool";
       const message = {
         id: payload?.id ?? payload?.call_id ?? null,
         parentId: null,
@@ -130,7 +168,15 @@ export class CodexAdapter {
       updatedAt,
       source: { adapter: this.id, sessionId: id, path: sessionPath },
       messages,
-      metadata: {}
+      metadata: {},
+      events,
+      lossless: mode === "lossless" ? {
+        enabled: true,
+        sourceFormat: "codex/rollout-jsonl",
+        rawRecordCount: events.length,
+        includesProviderReasoning: true,
+        includesUnknownEvents: true
+      } : null
     });
   }
 
@@ -171,7 +217,7 @@ export class CodexAdapter {
         source: "ccbridge"
       });
       const completion = await completed;
-      return { target: this.id, result, completion, cwd };
+      return { target: this.id, result, completion, cwd, requestedMode: options.mode ?? "portable" };
     } finally {
       await client.close();
     }

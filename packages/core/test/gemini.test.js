@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { GeminiCliAdapter } from "../src/adapters/gemini.js";
 
-test("reads Gemini CLI JSONL checkpoints and rewinds into a portable session", async () => {
+async function fixture() {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-gemini-"));
   const chats = path.join(home, "tmp", "project-hash", "chats");
   await fs.mkdir(chats, { recursive: true });
@@ -30,7 +30,7 @@ test("reads Gemini CLI JSONL checkpoints and rewinds into a portable session", a
       type: "gemini",
       timestamp: "2026-09-04T09:00:02Z",
       content: [{ text: "I will inspect it." }],
-      thoughts: [{ subject: "private", description: "do not export", timestamp: "2026-09-04T09:00:02Z" }],
+      thoughts: [{ subject: "private", description: "provider thought", timestamp: "2026-09-04T09:00:02Z" }],
       toolCalls: [
         {
           id: "call-1",
@@ -58,7 +58,11 @@ test("reads Gemini CLI JSONL checkpoints and rewinds into a portable session", a
   ];
 
   await fs.writeFile(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+  return { home, rows };
+}
 
+test("reads Gemini CLI JSONL checkpoints and rewinds into a portable session", async () => {
+  const { home } = await fixture();
   const adapter = new GeminiCliAdapter({ home, command: "__missing_gemini_for_test__" });
   const sessions = await adapter.listSessions();
   assert.equal(sessions.length, 1);
@@ -71,6 +75,20 @@ test("reads Gemini CLI JSONL checkpoints and rewinds into a portable session", a
   assert.deepEqual(session.messages[1].content.map((part) => part.type), ["text", "tool-call", "tool-result"]);
   assert.equal(session.metadata.projectHash, "project-hash");
   assert.deepEqual(session.metadata.directories, ["/tmp/project"]);
-  assert.equal(JSON.stringify(session).includes("do not export"), false);
+  assert.equal(JSON.stringify(session).includes("provider thought"), false);
   assert.equal(JSON.stringify(session).includes("This message will be rewound"), false);
+});
+
+test("lossless Gemini reads preserve thoughts and rewound history in raw events", async () => {
+  const { home, rows } = await fixture();
+  const adapter = new GeminiCliAdapter({ home, command: "__missing_gemini_for_test__" });
+  const session = await adapter.readSession("gemini-session-1", { mode: "lossless" });
+
+  assert.equal(session.lossless.enabled, true);
+  assert.equal(session.events.length, rows.length);
+  assert.equal(session.events.some((event) => event.kind === "rewind"), true);
+  assert.equal(JSON.stringify(session.events).includes("This message will be rewound"), true);
+  const reasoning = session.messages[1].content.find((part) => part.type === "reasoning");
+  assert.equal(reasoning.text, "provider thought");
+  assert.equal(reasoning.summary, "private");
 });

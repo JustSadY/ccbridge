@@ -2,7 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readJsonl } from "../io/jsonl.js";
-import { createPortableSession, textContent, toolCallContent, toolResultContent } from "../model.js";
+import {
+  createPortableSession,
+  normalizeTransferMode,
+  rawEvent,
+  reasoningContent,
+  textContent,
+  toolCallContent,
+  toolResultContent
+} from "../model.js";
 import { defaultGeminiHome } from "../platform/paths.js";
 import { pathExists, walkFiles } from "./fs-utils.js";
 
@@ -35,7 +43,7 @@ function contentParts(content) {
   return output;
 }
 
-function portableMessage(record) {
+function portableMessage(record, options = {}) {
   const output = contentParts(record.content);
   const knownCallIds = new Set(output.filter((part) => part.type === "tool-call" && part.id).map((part) => part.id));
 
@@ -48,6 +56,17 @@ function portableMessage(record) {
         callId: call.id,
         output: call.result,
         isError: call.status === "error" || call.status === "failed"
+      }));
+    }
+  }
+
+  if (options.mode === "lossless") {
+    for (const thought of record.thoughts ?? []) {
+      output.push(reasoningContent({
+        provider: "gemini-cli",
+        text: typeof thought?.description === "string" ? thought.description : null,
+        summary: thought?.subject ?? null,
+        raw: thought
       }));
     }
   }
@@ -77,15 +96,18 @@ async function loadConversation(file) {
     const parsed = JSON.parse(await fs.readFile(file, "utf8"));
     return {
       metadata: parsed,
-      messages: Array.isArray(parsed.messages) ? parsed.messages : []
+      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+      rawRecords: [parsed]
     };
   }
 
   let metadata = {};
   const messages = new Map();
+  const rawRecords = [];
 
   for await (const { value: record } of readJsonl(file)) {
     if (!record || typeof record !== "object") continue;
+    rawRecords.push(record);
 
     if (typeof record.$rewindTo === "string") {
       let found = false;
@@ -123,7 +145,7 @@ async function loadConversation(file) {
     }
   }
 
-  return { metadata, messages: [...messages.values()] };
+  return { metadata, messages: [...messages.values()], rawRecords };
 }
 
 export class GeminiCliAdapter {
@@ -131,7 +153,7 @@ export class GeminiCliAdapter {
     this.id = "gemini-cli";
     this.name = "Gemini CLI";
     this.aliases = ["gemini"];
-    this.capabilities = { discover: true, read: true, write: false, nativeExport: false, nativeImport: false };
+    this.capabilities = { discover: true, read: true, write: false, nativeExport: false, nativeImport: false, losslessRead: true };
     this.home = options.home ?? defaultGeminiHome(options);
     this.command = options.command ?? "gemini";
   }
@@ -161,7 +183,7 @@ export class GeminiCliAdapter {
         const stat = await fs.stat(file);
         const { metadata, messages } = await loadConversation(file);
         if (!metadata.sessionId) continue;
-        const firstUser = messages.map(portableMessage).find((message) => message?.role === "user");
+        const firstUser = messages.map((message) => portableMessage(message)).find((message) => message?.role === "user");
         sessions.push({
           adapter: this.id,
           id: metadata.sessionId,
@@ -182,12 +204,26 @@ export class GeminiCliAdapter {
     return sessions;
   }
 
-  async readSession(sessionRef) {
+  async readSession(sessionRef, options = {}) {
+    const mode = normalizeTransferMode(options.mode ?? "portable");
     const sessionPath = await this.resolveSession(sessionRef);
-    const { metadata, messages: nativeMessages } = await loadConversation(sessionPath);
-    const messages = nativeMessages.map(portableMessage).filter(Boolean);
+    const { metadata, messages: nativeMessages, rawRecords } = await loadConversation(sessionPath);
+    const messages = nativeMessages.map((message) => portableMessage(message, { mode })).filter(Boolean);
     const firstUser = messages.find((message) => message.role === "user");
     const id = metadata.sessionId ?? path.basename(sessionPath, path.extname(sessionPath));
+    const events = mode === "lossless"
+      ? rawRecords.map((record, index) => rawEvent({
+          index,
+          provider: this.id,
+          kind: typeof record.$rewindTo === "string"
+            ? "rewind"
+            : record.$set
+              ? "metadata-update"
+              : record.type ?? "metadata",
+          timestamp: record.timestamp ?? record.lastUpdated ?? null,
+          data: record
+        }))
+      : [];
 
     return createPortableSession({
       id,
@@ -202,7 +238,16 @@ export class GeminiCliAdapter {
         directories: metadata.directories ?? [],
         kind: metadata.kind ?? "main",
         summary: metadata.summary ?? null
-      }
+      },
+      events,
+      lossless: mode === "lossless" ? {
+        enabled: true,
+        sourceFormat: sessionPath.endsWith(".jsonl") ? "gemini-cli/session-jsonl" : "gemini-cli/session-json",
+        rawRecordCount: events.length,
+        includesProviderReasoning: true,
+        includesRewoundHistory: true,
+        includesUnknownEvents: true
+      } : null
     });
   }
 

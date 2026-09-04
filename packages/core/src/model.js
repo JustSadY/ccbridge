@@ -1,4 +1,13 @@
 export const PORTABLE_SESSION_VERSION = 1;
+export const TRANSFER_MODES = ["portable", "lossless"];
+
+export function normalizeTransferMode(mode = "portable") {
+  const normalized = String(mode ?? "portable").toLowerCase();
+  if (!TRANSFER_MODES.includes(normalized)) {
+    throw new Error(`Unsupported transfer mode: ${mode}. Expected one of: ${TRANSFER_MODES.join(", ")}`);
+  }
+  return normalized;
+}
 
 export function createPortableSession(input) {
   const session = {
@@ -14,7 +23,9 @@ export function createPortableSession(input) {
       path: input.source?.path ?? null
     },
     messages: Array.isArray(input.messages) ? input.messages : [],
-    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {}
+    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
+    events: Array.isArray(input.events) ? input.events : [],
+    lossless: input.lossless && typeof input.lossless === "object" ? input.lossless : null
   };
 
   validatePortableSession(session);
@@ -37,11 +48,26 @@ export function validatePortableSession(session) {
   if (!Array.isArray(session.messages)) {
     throw new Error("Portable session messages must be an array");
   }
+  if (!Array.isArray(session.events)) {
+    throw new Error("Portable session events must be an array");
+  }
   return session;
 }
 
 export function textContent(text) {
   return { type: "text", text: String(text) };
+}
+
+export function reasoningContent({ provider, text = null, summary = null, signature = null, encrypted = null, raw = null }) {
+  return {
+    type: "reasoning",
+    provider: provider ?? "unknown",
+    text: typeof text === "string" ? text : null,
+    summary: summary ?? null,
+    signature: signature ?? null,
+    encrypted: encrypted ?? null,
+    raw: raw ?? null
+  };
 }
 
 export function toolCallContent({ id, name, input }) {
@@ -59,5 +85,15 @@ export function toolResultContent({ callId, output, isError = false }) {
     callId: callId ?? null,
     output: output ?? null,
     isError: Boolean(isError)
+  };
+}
+
+export function rawEvent({ index, provider, kind, timestamp = null, data }) {
+  return {
+    index,
+    provider: provider ?? "unknown",
+    kind: kind ?? "unknown",
+    timestamp,
+    data
   };
 }

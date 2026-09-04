@@ -19,7 +19,24 @@ export {
 } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
 export { CodexAppServerClient } from "./codex/app-server-client.js";
-export { createPortableSession, validatePortableSession, PORTABLE_SESSION_VERSION } from "./model.js";
+export {
+  createPortableSession,
+  normalizeTransferMode,
+  rawEvent,
+  reasoningContent,
+  textContent,
+  toolCallContent,
+  toolResultContent,
+  TRANSFER_MODES,
+  validatePortableSession,
+  PORTABLE_SESSION_VERSION
+} from "./model.js";
+export {
+  defaultCcbridgeHome,
+  LOSSLESS_BUNDLE_FORMAT,
+  LOSSLESS_BUNDLE_VERSION,
+  writeLosslessBundle
+} from "./lossless/archive.js";
 export {
   detectRuntime,
   defaultClaudeHome,

@@ -54,9 +54,10 @@ function has(name) {
 
 function positional() {
   const values = [];
+  const booleanOptions = ["--json", "--dry-run", "--all"];
   for (let i = 0; i < args.length; i += 1) {
     if (args[i].startsWith("--")) {
-      if (!["--json", "--dry-run"].includes(args[i])) i += 1;
+      if (!booleanOptions.includes(args[i])) i += 1;
       continue;
     }
     values.push(args[i]);
@@ -70,6 +71,10 @@ function print(value) {
   else console.log(JSON.stringify(value, null, 2));
 }
 
+function requestedMode() {
+  return has("--all") ? "lossless" : valueOf("--mode") ?? "portable";
+}
+
 function usage() {
   console.log(`ccbridge - local coding-agent session bridge
 
@@ -77,9 +82,15 @@ Usage:
   ccbridge adapters [--plugin MODULE] [--json]
   ccbridge doctor [--plugin MODULE] [--json]
   ccbridge list <adapter> [--plugin MODULE] [--json]
-  ccbridge inspect <adapter> <session-id-or-path> [--plugin MODULE] [--json]
-  ccbridge plan <from> <to> <session-id-or-path> [--cwd PATH] [--plugin MODULE] [--json]
-  ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH] [--dry-run] [--plugin MODULE] [--json]
+  ccbridge inspect <adapter> <session-id-or-path> [--mode portable|lossless] [--all] [--plugin MODULE] [--json]
+  ccbridge plan <from> <to> <session-id-or-path> [--cwd PATH] [--mode portable|lossless] [--all] [--bundle PATH] [--plugin MODULE] [--json]
+  ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH] [--mode portable|lossless] [--all] [--bundle PATH] [--dry-run] [--plugin MODULE] [--json]
+
+Modes:
+  portable  normalized visible conversation/tool history (default)
+  lossless  also preserves provider thinking/reasoning, raw events, rewinds,
+            metadata and unknown records in a private ccbridge bundle
+  --all     shorthand for --mode lossless
 
 Built-ins:
   claude / claude-code
@@ -88,14 +99,16 @@ Built-ins:
 
 Environment:
   CCBRIDGE_PLUGINS=package-a,./local-adapter.js
+  CCBRIDGE_HOME=/custom/ccbridge/home
 
 Examples:
   ccbridge adapters
   ccbridge list claude
-  ccbridge list gemini
-  ccbridge inspect codex <session-id>
-  ccbridge plan claude codex <session-id>
-  ccbridge transfer claude codex <session-id> --dry-run
+  ccbridge inspect claude <session-id> --all
+  ccbridge inspect codex <session-id> --mode lossless
+  ccbridge plan claude codex <session-id> --all
+  ccbridge transfer claude codex <session-id> --all --dry-run
+  ccbridge transfer claude codex <session-id> --all --bundle ./session.ccbridge.json
   ccbridge list opencode --plugin @example/ccbridge-opencode
 `);
 }
@@ -105,7 +118,14 @@ function transferArgs() {
   if (!from || !to || !session) {
     throw new Error("Usage: ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH]");
   }
-  return { from, to, session, cwd: valueOf("--cwd") };
+  return {
+    from,
+    to,
+    session,
+    cwd: valueOf("--cwd"),
+    mode: requestedMode(),
+    bundle: valueOf("--bundle")
+  };
 }
 
 try {
@@ -133,7 +153,7 @@ try {
   } else if (command === "inspect" || command === "show") {
     const [adapter, session] = positional();
     if (!adapter || !session) throw new Error("Usage: ccbridge inspect <adapter> <session-id-or-path>");
-    print(await bridge.inspect(adapter, session));
+    print(await bridge.inspect(adapter, session, { mode: requestedMode() }));
   } else if (command === "plan") {
     print(await bridge.planTransfer(transferArgs()));
   } else if (command === "transfer" || command === "import") {
