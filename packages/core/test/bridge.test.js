@@ -70,4 +70,4 @@ test("falls back to portable sessions when native formats are incompatible", asy
   const plan = await bridge.planTransfer({ from: "source", to: "target", session: "session-1" });
   assert.equal(plan.route, "portable");
   assert.equal(plan.sessionId, "session-1");
-}
+});
