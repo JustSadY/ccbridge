@@ -104,12 +104,14 @@ test("Qwen lossless mode preserves thinking, inactive branches, malformed input 
   assert.ok(session.agents[0].messages.some((message) => message.content.some((part) => part.type === "reasoning" && part.text === "agent private")));
 });
 
-test("Qwen native export exposes the original JSONL without target-write support", async () => {
+test("Qwen native export exposes root JSONL and byte-level subagent companions", async () => {
   const fx = await fixture();
   const adapter = new QwenCodeAdapter({ sessionRoots: [fx.projects], runner: noCli });
   const artifact = await adapter.getNativeArtifact(sessionId);
   assert.equal(artifact.format, "qwen-code/session-jsonl");
   assert.equal(artifact.path, fx.file);
   assert.equal(artifact.sessionId, sessionId);
+  assert.deepEqual(artifact.companions.map((item) => item.filename).sort(), ["subagents/agent-agent-x.jsonl", "subagents/agent-agent-x.meta.json"]);
+  assert.deepEqual(artifact.companions.map((item) => item.mediaType).sort(), ["application/json", "application/x-ndjson"]);
   assert.equal(adapter.capabilities.nativeImport, false);
 });
