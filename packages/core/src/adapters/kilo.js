@@ -35,6 +35,10 @@ function patchCurrentSession(session) {
 function patchLegacySession(session) {
   session.source = { ...session.source, adapter: "kilo-code" };
   session.metadata = { ...session.metadata, kiloBackend: "legacy-extension", legacyRooCompatible: true, archivedUpstream: false };
+  session.events = (session.events ?? []).map((event) => ({ ...event, provider: "kilo-code" }));
+  for (const message of session.messages ?? []) {
+    message.content = (message.content ?? []).map((part) => part?.type === "reasoning" ? { ...part, provider: "kilo-code" } : part);
+  }
   if (session.lossless) session.lossless = { ...session.lossless, sourceFormat: "kilo/legacy-task-files-v1" };
   return session;
 }
