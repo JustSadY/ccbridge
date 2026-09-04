@@ -2,7 +2,7 @@
 
 Cross-agent local session bridge for coding assistants.
 
-Claude Code and OpenAI Codex are the first built-in adapters. The transfer engine itself is provider-neutral and is designed for additional agents such as Gemini CLI, Cursor, OpenCode, Aider and others.
+Claude Code, OpenAI Codex and Gemini CLI are built-in adapters. The transfer engine itself is provider-neutral and is designed for additional agents such as Cursor, OpenCode, Aider and others.
 
 ## Repository layout
 
@@ -18,8 +18,11 @@ packages/
 | --- | --- | --- | --- |
 | Claude Code | yes | yes | no |
 | OpenAI Codex | yes | yes | Claude Code session JSONL via Codex app-server |
+| Gemini CLI | yes | yes | no |
 
 The Codex target uses `codex app-server` and `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly.
+
+Gemini CLI support currently reads its project-scoped recorded sessions, including JSONL metadata updates and rewind records. Provider-private `thoughts` are intentionally excluded from the portable model.
 
 ## Install from source
 
@@ -36,13 +39,15 @@ ccbridge adapters
 ccbridge doctor
 ccbridge list claude
 ccbridge list codex
+ccbridge list gemini
 ccbridge inspect claude <session-id>
+ccbridge inspect gemini <session-id>
 ccbridge plan claude codex <session-id>
 ccbridge transfer claude codex <session-id> --dry-run
 ccbridge transfer claude codex <session-id>
 ```
 
-A direct JSONL path is also accepted:
+A direct JSONL path is also accepted by adapters that expose native session files:
 
 ```bash
 ccbridge transfer claude codex ~/.claude/projects/<project>/<session>.jsonl --cwd /path/to/project
@@ -53,18 +58,17 @@ ccbridge transfer claude codex ~/.claude/projects/<project>/<session>.jsonl --cw
 Third-party adapters can be loaded without modifying this repository:
 
 ```bash
-ccbridge adapters --plugin @example/ccbridge-gemini
-ccbridge list gemini --plugin @example/ccbridge-gemini
-ccbridge transfer gemini codex <session-id> --plugin @example/ccbridge-gemini
+ccbridge adapters --plugin @example/ccbridge-opencode
+ccbridge list opencode --plugin @example/ccbridge-opencode
 ```
 
 Multiple adapter packages can be loaded with repeated `--plugin` flags or with:
 
 ```bash
-CCBRIDGE_PLUGINS=@example/ccbridge-gemini,./local-adapter.js ccbridge adapters
+CCBRIDGE_PLUGINS=@example/ccbridge-opencode,./local-adapter.js ccbridge adapters
 ```
 
-See [docs/ADAPTERS.md](docs/ADAPTERS.md) for the adapter/plugin contract.
+See [docs/ADAPTERS.md](docs/ADAPTERS.md) for the adapter/plugin contract and [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md) for the interchange model.
 
 ## Transfer routing
 
@@ -89,9 +93,10 @@ Built-in defaults:
 ```text
 Claude Code: ~/.claude/projects/**/*.jsonl
 Codex:       ~/.codex/sessions/**/*.jsonl
+Gemini CLI:  ~/.gemini/tmp/**/chats/*.{json,jsonl}
 ```
 
-`CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected.
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected. Individual adapters may also accept explicit home/config paths through the core API.
 
 Windows and Linux are supported runtime targets. Platform-specific handling is limited to filesystem/storage differences; the portable session and transfer architecture are operating-system agnostic.
 
