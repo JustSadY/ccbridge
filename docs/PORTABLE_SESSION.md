@@ -56,9 +56,13 @@ Targets that do not support agent trees must not silently claim to preserve them
 
 Claude Code currently discovers normal subagents and workflow subagents beneath the parent session's `subagents/` directory. Subagent JSONL files are not exposed as duplicate top-level sessions.
 
+Qwen Code stores subagent transcripts separately under the project runtime store. ccbridge maps those transcripts to `agents[]`; when a native Qwen artifact is archived, the corresponding `agent-*.jsonl` and `agent-*.meta.json` files are also included as native companion entries so the original subagent material is not represented only through normalization.
+
 ## Portable mode
 
 Portable mode carries normalized user-visible context such as text, attachments, tool calls, tool results and safe adapter metadata. Provider-private thinking/reasoning is not exposed in portable mode.
+
+For tree/compaction providers, `messages[]` is the context that the provider would resume from, not necessarily every historical UI-visible message ever written to disk. Qwen Code is one example: ccbridge follows the active `parentUuid` chain, and when it encounters the latest active `chat_compression` record it replaces earlier semantic history with that record's `compressedHistory` before appending later messages. Compression-predecessor messages and inactive branches therefore do not appear in Qwen portable `messages[]`; in lossless mode their original physical JSONL records remain under `events[]`.
 
 ### Text
 
