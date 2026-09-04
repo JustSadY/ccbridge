@@ -54,6 +54,15 @@ const BUILTIN_CONTRACTS = {
     preserveUnknownRecords: true,
     presentationOriented: true,
     testedVersions: []
+  },
+  cline: {
+    contractVersion: 1,
+    sourceFormats: ["cline/messages-json-v1"],
+    recordKinds: [],
+    recordKindPrefixes: ["message:"],
+    contentTypes: ["text", "tool-call", "tool-result", "reasoning"],
+    preserveUnknownRecords: true,
+    testedVersions: []
   }
 };
 
