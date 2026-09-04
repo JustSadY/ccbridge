@@ -14,6 +14,7 @@ export { OpenCodeAdapter } from "./adapters/opencode.js";
 export { AntigravityCliAdapter } from "./adapters/antigravity.js";
 export { SessionBridge } from "./bridge.js";
 export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
+export { BUILTIN_COMPATIBILITY_CONTRACTS, adapterCompatibilityContract, checkAdapterCompatibility, compatibilityReport } from "./compatibility.js";
 export { diffCcbridgeArchives, diffPortableSessions } from "./diff.js";
 export { scanAdapter, scanRegistry } from "./scan.js";
 export { verifyCcbridgeArchive, verifyPortableTransfer } from "./verify.js";
