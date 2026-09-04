@@ -143,6 +143,18 @@ function bootstrapMessages(history, mode, agentId, bootstrapUuid) {
   }).filter(Boolean);
 }
 
+function relinkForkMessages(messages) {
+  let previousId = null;
+  return (messages ?? []).map((message) => {
+    const originalParentId = message?.parentId ?? null;
+    const metadata = { ...(message?.metadata ?? {}) };
+    if (originalParentId !== null && originalParentId !== previousId) metadata.qwenOriginalParentId = originalParentId;
+    const linked = { ...message, parentId: previousId, metadata };
+    if (linked.id) previousId = linked.id;
+    return linked;
+  });
+}
+
 async function enhanceAgent(agent, mode) {
   if (!agent?.source?.path) return agent;
   let records;
@@ -165,10 +177,11 @@ async function enhanceAgent(agent, mode) {
     metadata: { qwenForkLaunchPrompt: true, sourceRecordUuid: launch.uuid ?? null }
   };
   const runtime = (enriched.messages ?? []).filter((message) => !launchSeedUuid || message?.id !== launchSeedUuid);
+  const messages = relinkForkMessages([...inherited, launchMessage, ...runtime]);
 
   return {
     ...enriched,
-    messages: [...inherited, launchMessage, ...runtime],
+    messages,
     metadata: {
       ...(enriched.metadata ?? {}),
       qwenForkBootstrap: {
