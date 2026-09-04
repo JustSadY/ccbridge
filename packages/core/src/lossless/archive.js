@@ -58,6 +58,12 @@ async function bytesForAttachment(part) {
   if (typeof part?.data === "string") return Buffer.from(part.data, part.encoding === "base64" ? "base64" : "utf8");
   return dataUrlBytes(part?.uri);
 }
+function normalizeEntryPath(value) {
+  const normalized = String(value ?? "").replaceAll("\\", "/").replace(/^\.\//, "");
+  const segments = normalized.split("/");
+  if (!normalized || normalized.startsWith("/") || segments.some((segment) => !segment || segment === "." || segment === "..")) throw new Error(`Invalid ccbridge entry path: ${value ?? "<missing>"}`);
+  return normalized;
+}
 function uniqueEntryPath(entries, scopeId, filename, messageIndex, partIndex) {
   const used = new Set(entries.map((entry) => entry.path));
   const base = `${String(messageIndex + 1).padStart(4, "0")}-${String(partIndex + 1).padStart(3, "0")}-${filename}`;
@@ -72,7 +78,11 @@ function uniqueEntryPath(entries, scopeId, filename, messageIndex, partIndex) {
   }
   return candidate;
 }
-function makeAttachmentEntry(entryPath, bytes, mimeType) { return { path: entryPath, mediaType: mimeType || "application/octet-stream", bytes: bytes.length, sha256: sha256(bytes), encoding: "base64", content: bytes.toString("base64") }; }
+function makeBinaryEntry(entryPath, bytes, mediaType = "application/octet-stream", encoding = "base64") {
+  const data = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  return { path: normalizeEntryPath(entryPath), mediaType, bytes: data.length, sha256: sha256(data), encoding, content: encoding === "utf8" ? data.toString("utf8") : data.toString("base64") };
+}
+function makeAttachmentEntry(entryPath, bytes, mimeType) { return makeBinaryEntry(entryPath, bytes, mimeType || "application/octet-stream", "base64"); }
 function portableEntry(archive) {
   const entry = archive.entries?.find((item) => item?.path === "portable/session.json");
   if (!entry) throw new Error("Missing ccbridge entry: portable/session.json");
@@ -123,6 +133,29 @@ async function embedAttachments(archive) {
   validateBaseArchive(archive);
   return { embedded, warnings };
 }
+async function bytesForExtraEntry(extra) {
+  if (extra?.sourcePath) return fs.readFile(path.resolve(extra.sourcePath));
+  if (Buffer.isBuffer(extra?.bytes)) return extra.bytes;
+  if (extra?.content !== undefined) return Buffer.from(String(extra.content), extra.encoding === "base64" ? "base64" : "utf8");
+  throw new Error(`Extra ccbridge entry has no content: ${extra?.entryPath ?? "unknown"}`);
+}
+async function embedExtraEntries(archive, extras = []) {
+  if (!extras.length) return 0;
+  const used = new Set((archive.entries ?? []).map((entry) => entry.path));
+  let count = 0;
+  for (const extra of extras) {
+    const entryPath = normalizeEntryPath(extra?.entryPath);
+    if (used.has(entryPath)) throw new Error(`Duplicate ccbridge extra entry: ${entryPath}`);
+    const bytes = await bytesForExtraEntry(extra);
+    archive.entries.push(makeBinaryEntry(entryPath, bytes, extra.mediaType ?? "application/octet-stream", extra.storeEncoding === "utf8" ? "utf8" : "base64"));
+    used.add(entryPath);
+    count += 1;
+  }
+  archive.manifest.entries = archive.entries.map(descriptor);
+  archive.manifest.extraEntryCount = (archive.manifest.extraEntryCount ?? 0) + count;
+  validateBaseArchive(archive);
+  return count;
+}
 function rehydrateAttachments(archive) {
   const entryMap = new Map((archive.entries ?? []).map((entry) => [entry.path, entry]));
   for (const scope of messageScopes(archive.session)) {
@@ -150,11 +183,12 @@ export async function writeCcbridgeArchive(session, options = {}) {
   const archivePath = written.path;
   const raw = JSON.parse(await fs.readFile(archivePath, "utf8"));
   const attachments = await embedAttachments(raw);
+  const extraEntryCount = await embedExtraEntries(raw, options.extraEntries ?? []);
   const temporary = `${archivePath}.${process.pid}.${Date.now()}.attachments.tmp`;
   await fs.writeFile(temporary, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
   await fs.rename(temporary, archivePath);
   try { await fs.chmod(archivePath, 0o600); } catch {}
-  return { ...written, entryCount: raw.entries?.length ?? written.entryCount, embeddedAttachmentCount: attachments.embedded, skippedAttachmentCount: attachments.warnings.length };
+  return { ...written, entryCount: raw.entries?.length ?? written.entryCount, embeddedAttachmentCount: attachments.embedded, skippedAttachmentCount: attachments.warnings.length, extraEntryCount };
 }
 export async function materializeCcbridgeAttachments(archiveInput, options = {}) {
   const archive = await readCcbridgeArchive(archiveInput);
