@@ -8,6 +8,7 @@ import { attachmentContent, createPortableAgent, createPortableSession, rawEvent
 
 const RECORD_TYPES = new Set(["user", "assistant", "tool_result", "system"]);
 const ARTIFACT_SUBTYPES = new Set(["session_artifact_event", "session_artifact_snapshot"]);
+const KNOWN_PORTABLE_CONTENT_TYPES = new Set(["text", "tool-call", "tool-result", "reasoning", "attachment"]);
 const exists = (file) => fs.access(file).then(() => true).catch(() => false);
 
 function iso(value) {
@@ -234,7 +235,9 @@ function partsToPortable(parts, mode, provider = "qwen-code") {
     }
     if (part.fileData && typeof part.fileData === "object" && typeof part.fileData.fileUri === "string") {
       output.push(attachmentContent({ mimeType: part.fileData.mimeType ?? part.fileData.mime_type ?? "application/octet-stream", uri: part.fileData.fileUri, metadata: { qwenPartType: "fileData" } }));
+      continue;
     }
+    if (mode === "lossless") output.push({ type: "qwen-unknown", provider, raw: part });
   }
   return output;
 }
@@ -475,6 +478,7 @@ export class QwenCodeAdapter {
         rawRecordCount: parsed.rawRecordCount + agents.reduce((sum, agent) => sum + (agent.events?.length ?? 0), 0),
         rootRawRecordCount: parsed.rawRecordCount,
         includesProviderReasoning: allContent.some((part) => part.type === "reasoning"),
+        includesUnknownContent: allContent.some((part) => !KNOWN_PORTABLE_CONTENT_TYPES.has(part?.type)),
         includesUnknownEvents: true,
         includesSubagents: agents.length > 0,
         preservesInactiveBranchesAsRawEvents: parsed.records.length > parsed.chain.records.length
