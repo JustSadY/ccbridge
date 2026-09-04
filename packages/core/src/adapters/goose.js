@@ -59,7 +59,7 @@ export class GooseAdapter {
     this.id = "goose"; this.name = "Goose"; this.aliases = ["goose-ai"];
     this.capabilities = { discover: true, read: true, write: false, nativeExport: true, nativeImport: true, losslessRead: true };
     this.nativeExports = ["goose/session-json"];
-    this.nativeImports = ["goose/session-json", "claude-code/session-jsonl", "codex/rollout-jsonl"];
+    this.nativeImports = ["goose/session-json", "claude-code/session-jsonl", "codex/rollout-jsonl", "pi/session-jsonl"];
     this.losslessNativeImports = ["goose/session-json"];
     this.command = options.command ?? "goose"; this.runner = options.runner ?? spawnSync; this.exportRoots = defaultExportRoots(options);
   }
