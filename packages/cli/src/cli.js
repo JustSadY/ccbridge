@@ -1,8 +1,39 @@
 #!/usr/bin/env node
-import { createDefaultBridge, detectRuntime, defaultClaudeHome, defaultCodexHome } from "@ccbridge/core";
+import { createBridgeWithPlugins, detectRuntime, defaultClaudeHome, defaultCodexHome } from "@ccbridge/core";
 
-const bridge = createDefaultBridge();
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+
+function repeatedValues(argv, name) {
+  const values = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === name && argv[i + 1]) {
+      values.push(argv[i + 1]);
+      i += 1;
+    }
+  }
+  return values;
+}
+
+function withoutOptionPairs(argv, names) {
+  const output = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (names.includes(argv[i])) {
+      i += 1;
+      continue;
+    }
+    output.push(argv[i]);
+  }
+  return output;
+}
+
+const envPlugins = String(process.env.CCBRIDGE_PLUGINS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const plugins = [...envPlugins, ...repeatedValues(rawArgs, "--plugin")];
+const bridge = await createBridgeWithPlugins({ plugins });
+
+const args = withoutOptionPairs(rawArgs, ["--plugin"]);
 const command = args.shift() ?? "help";
 
 function valueOf(name) {
@@ -37,19 +68,32 @@ function usage() {
   console.log(`ccbridge - local coding-agent session bridge
 
 Usage:
-  ccbridge adapters [--json]
-  ccbridge doctor [--json]
-  ccbridge list <adapter> [--json]
-  ccbridge inspect <adapter> <session-id-or-path> [--json]
-  ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH] [--dry-run] [--json]
+  ccbridge adapters [--plugin MODULE] [--json]
+  ccbridge doctor [--plugin MODULE] [--json]
+  ccbridge list <adapter> [--plugin MODULE] [--json]
+  ccbridge inspect <adapter> <session-id-or-path> [--plugin MODULE] [--json]
+  ccbridge plan <from> <to> <session-id-or-path> [--cwd PATH] [--plugin MODULE] [--json]
+  ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH] [--dry-run] [--plugin MODULE] [--json]
+
+Environment:
+  CCBRIDGE_PLUGINS=package-a,./local-adapter.js
 
 Examples:
   ccbridge adapters
   ccbridge list claude
-  ccbridge inspect claude 395e3f13-...
-  ccbridge transfer claude codex 395e3f13-... --dry-run
-  ccbridge transfer claude codex /path/to/session.jsonl --cwd /path/to/project
+  ccbridge inspect codex <session-id>
+  ccbridge plan claude codex <session-id>
+  ccbridge transfer claude codex <session-id> --dry-run
+  ccbridge list gemini --plugin @example/ccbridge-gemini
 `);
+}
+
+function transferArgs() {
+  const [from, to, session] = positional();
+  if (!from || !to || !session) {
+    throw new Error("Usage: ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH]");
+  }
+  return { from, to, session, cwd: valueOf("--cwd") };
 }
 
 try {
@@ -62,6 +106,7 @@ try {
     const adapters = await bridge.doctor();
     print({
       runtime,
+      plugins,
       homes: { claude: defaultClaudeHome(), codex: defaultCodexHome() },
       adapters
     });
@@ -73,18 +118,10 @@ try {
     const [adapter, session] = positional();
     if (!adapter || !session) throw new Error("Usage: ccbridge inspect <adapter> <session-id-or-path>");
     print(await bridge.inspect(adapter, session));
+  } else if (command === "plan") {
+    print(await bridge.planTransfer(transferArgs()));
   } else if (command === "transfer" || command === "import") {
-    const [from, to, session] = positional();
-    if (!from || !to || !session) {
-      throw new Error("Usage: ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH]");
-    }
-    print(await bridge.transfer({
-      from,
-      to,
-      session,
-      cwd: valueOf("--cwd"),
-      dryRun: has("--dry-run")
-    }));
+    print(await bridge.transfer({ ...transferArgs(), dryRun: has("--dry-run") }));
   } else {
     throw new Error(`Unknown command: ${command}`);
   }
