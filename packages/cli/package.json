@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js"
+    "check": "node --check src/cli.js && node --check src/interactive.js"
   },
   "engines": {
     "node": ">=20"
