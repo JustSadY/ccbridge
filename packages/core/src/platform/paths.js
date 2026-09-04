@@ -9,6 +9,8 @@ export function detectRuntime(env = process.env, platform = process.platform) {
 export function defaultClaudeHome({ env = process.env, home = os.homedir() } = {}) { return env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"); }
 export function defaultCodexHome({ env = process.env, home = os.homedir() } = {}) { return env.CODEX_HOME || path.join(home, ".codex"); }
 export function defaultGeminiHome({ env = process.env, home = os.homedir() } = {}) { return path.join(env.GEMINI_CLI_HOME || home, ".gemini"); }
+export function defaultQwenHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_HOME || path.join(home, ".qwen")); }
+export function defaultQwenRuntimeHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_RUNTIME_DIR || defaultQwenHome({ env, home })); }
 export function defaultAntigravityCliHome({ env = process.env, home = os.homedir() } = {}) { return env.CCBRIDGE_ANTIGRAVITY_HOME || path.join(home, ".gemini", "antigravity-cli"); }
 
 export function normalizePathKey(input, platform = process.platform) {
