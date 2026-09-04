@@ -10,6 +10,8 @@ import {
   defaultClaudeHome,
   defaultCodexHome,
   defaultGeminiHome,
+  defaultQwenHome,
+  defaultQwenRuntimeHome,
   defaultAntigravityCliHome,
   diffCcbridgeArchives,
   encryptCcbridgeArchive,
@@ -77,7 +79,7 @@ try {
   else if (command === "routes") { const [from, to] = positional(); printRoutes(bridge.routes({ from: from ?? null, to: to ?? null })); }
   else if (command === "ui" || command === "interactive") await runInteractive(bridge);
   else if (command === "scan") print(await bridge.scan({ adapterIds: positional(), includeSessions: has("--sessions"), limit: numericValue("--limit", 20) }));
-  else if (command === "doctor") print({ runtime: detectRuntime(), plugins: { persistent: persistentPlugins, environment: envPlugins, explicit: explicitPlugins, loaded: plugins }, homes: { claude: defaultClaudeHome(), codex: defaultCodexHome(), gemini: defaultGeminiHome(), antigravity: defaultAntigravityCliHome() }, adapters: await bridge.doctor() });
+  else if (command === "doctor") print({ runtime: detectRuntime(), plugins: { persistent: persistentPlugins, environment: envPlugins, explicit: explicitPlugins, loaded: plugins }, homes: { claude: defaultClaudeHome(), codex: defaultCodexHome(), gemini: defaultGeminiHome(), qwen: defaultQwenHome(), qwenRuntime: defaultQwenRuntimeHome(), antigravity: defaultAntigravityCliHome() }, adapters: await bridge.doctor() });
   else if (command === "list" || command === "sessions") { const [adapter] = positional(); if (!adapter) throw new Error("Usage: ccbridge list <adapter>"); print(await bridge.listSessions(adapter)); }
   else if (command === "inspect" || command === "show") { const [adapter, session] = positional(); if (!adapter || !session) throw new Error("Usage: ccbridge inspect <adapter> <session>"); print(await bridge.inspect(adapter, session, { mode: requestedMode() })); }
   else if (command === "fidelity") print(await bridge.fidelity(transferArgs()));
