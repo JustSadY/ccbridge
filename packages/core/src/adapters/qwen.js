@@ -8,7 +8,7 @@ import { attachmentContent, createPortableAgent, createPortableSession, rawEvent
 
 const RECORD_TYPES = new Set(["user", "assistant", "tool_result", "system"]);
 const ARTIFACT_SUBTYPES = new Set(["session_artifact_event", "session_artifact_snapshot"]);
-const KNOWN_PORTABLE_CONTENT_TYPES = new Set(["text", "tool-call", "tool-result", "reasoning", "attachment"]);
+const KNOWN_QWEN_CONTENT_TYPES = new Set(["text", "tool-call", "tool-result", "reasoning", "attachment", "qwen-executable-code", "qwen-code-execution-result", "qwen-video-metadata"]);
 const exists = (file) => fs.access(file).then(() => true).catch(() => false);
 
 function iso(value) {
@@ -209,6 +209,10 @@ function responseIsError(response) {
   return Boolean(response.error ?? response.isError ?? response.is_error);
 }
 
+function mediaMetadata(part, qwenPartType) {
+  return { qwenPartType, ...(part?.videoMetadata && typeof part.videoMetadata === "object" ? { videoMetadata: part.videoMetadata } : {}) };
+}
+
 function partsToPortable(parts, mode, provider = "qwen-code") {
   const output = [];
   for (const part of Array.isArray(parts) ? parts : []) {
@@ -230,11 +234,23 @@ function partsToPortable(parts, mode, provider = "qwen-code") {
       continue;
     }
     if (part.inlineData && typeof part.inlineData === "object" && typeof part.inlineData.data === "string") {
-      output.push(attachmentContent({ mimeType: part.inlineData.mimeType ?? part.inlineData.mime_type ?? "application/octet-stream", data: part.inlineData.data, encoding: "base64", metadata: { qwenPartType: "inlineData" } }));
+      output.push(attachmentContent({ mimeType: part.inlineData.mimeType ?? part.inlineData.mime_type ?? "application/octet-stream", data: part.inlineData.data, encoding: "base64", metadata: mediaMetadata(part, "inlineData") }));
       continue;
     }
     if (part.fileData && typeof part.fileData === "object" && typeof part.fileData.fileUri === "string") {
-      output.push(attachmentContent({ mimeType: part.fileData.mimeType ?? part.fileData.mime_type ?? "application/octet-stream", uri: part.fileData.fileUri, metadata: { qwenPartType: "fileData" } }));
+      output.push(attachmentContent({ mimeType: part.fileData.mimeType ?? part.fileData.mime_type ?? "application/octet-stream", uri: part.fileData.fileUri, metadata: mediaMetadata(part, "fileData") }));
+      continue;
+    }
+    if (part.executableCode !== undefined) {
+      if (mode === "lossless") output.push({ type: "qwen-executable-code", provider, executableCode: part.executableCode, raw: part });
+      continue;
+    }
+    if (part.codeExecutionResult !== undefined) {
+      if (mode === "lossless") output.push({ type: "qwen-code-execution-result", provider, codeExecutionResult: part.codeExecutionResult, raw: part });
+      continue;
+    }
+    if (part.videoMetadata !== undefined) {
+      if (mode === "lossless") output.push({ type: "qwen-video-metadata", provider, videoMetadata: part.videoMetadata, raw: part });
       continue;
     }
     if (mode === "lossless") output.push({ type: "qwen-unknown", provider, raw: part });
@@ -478,7 +494,7 @@ export class QwenCodeAdapter {
         rawRecordCount: parsed.rawRecordCount + agents.reduce((sum, agent) => sum + (agent.events?.length ?? 0), 0),
         rootRawRecordCount: parsed.rawRecordCount,
         includesProviderReasoning: allContent.some((part) => part.type === "reasoning"),
-        includesUnknownContent: allContent.some((part) => !KNOWN_PORTABLE_CONTENT_TYPES.has(part?.type)),
+        includesUnknownContent: allContent.some((part) => !KNOWN_QWEN_CONTENT_TYPES.has(part?.type)),
         includesUnknownEvents: true,
         includesSubagents: agents.length > 0,
         preservesInactiveBranchesAsRawEvents: parsed.records.length > parsed.chain.records.length
