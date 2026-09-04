@@ -4,14 +4,14 @@
   "description": "CLI for transferring local coding-agent sessions",
   "type": "module",
   "bin": {
-    "ccbridge": "./src/cli.js"
+    "ccbridge": "./src/entry.js"
   },
   "dependencies": {
     "@ccbridge/core": "*"
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/interactive.js"
+    "check": "node --check src/entry.js && node --check src/cli.js && node --check src/interactive.js"
   },
   "engines": {
     "node": ">=20"
