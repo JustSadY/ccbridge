@@ -62,7 +62,7 @@ ccbridge export claude <session-id> --output ./session.ccbridge
 ccbridge export antigravity <conversation-id> --output ./agy.ccbridge
 ```
 
-`export` defaults to lossless mode. An archive stores the normalized session plus the original native artifact when available. Native artifacts may contain companion files; Antigravity SQLite WAL/SHM files are embedded alongside the main DB.
+`.ccbridge` v2 uses a manifest with integrity-checked entries for portable session data, raw events, native artifacts, companion files and attachments. Each entry records its byte size and SHA-256 digest. Older v1 archives remain readable.
 
 Restore later, even if the original source session file is gone:
 
@@ -73,6 +73,19 @@ ccbridge import ./opencode.ccbridge opencode --cwd /path/to/project
 ```
 
 Import routing prefers an explicitly compatible embedded native format, then falls back to `PortableSession` when the target provides a portable writer. See [docs/ARCHIVE.md](docs/ARCHIVE.md).
+
+## Attachments and media
+
+Portable sessions can carry attachment entries such as images, documents and audio. Byte-backed attachments are stored separately in `.ccbridge` v2 and protected by the same integrity manifest.
+
+Current support includes:
+
+- Claude Code inline image/document content;
+- Codex `input_image` and `input_audio` content;
+- Gemini CLI `inlineData` and `fileData` references;
+- OpenCode `file` parts, including portable write/import via data URLs.
+
+Remote URI references are preserved as references; ccbridge does not automatically download arbitrary remote URLs.
 
 ## Transfer examples
 
@@ -95,6 +108,46 @@ With `--all`, provider-private reasoning and raw events that cannot be represent
 
 Antigravity is native-only today, so semantic `antigravity -> codex/opencode` transfer is deliberately rejected rather than silently importing an empty conversation.
 
+## Cross-platform cwd mapping
+
+Windows and Linux are normal runtime targets; the bridge architecture is OS-agnostic. When a stored session path does not match the target runtime, map only the session `cwd` used for the target import.
+
+Automatic Windows/WSL drive conversion:
+
+```bash
+ccbridge transfer claude codex <session-id> \
+  --target-profile wsl \
+  --dry-run
+
+ccbridge import ./session.ccbridge opencode \
+  --target-profile windows
+```
+
+Supported target profiles:
+
+```text
+native
+windows
+wsl
+linux
+```
+
+Explicit prefix mapping is repeatable and takes priority over automatic profile conversion:
+
+```bash
+ccbridge transfer claude opencode <session-id> \
+  --map-cwd 'C:\Users\me\Projects=/home/me/projects'
+```
+
+For example:
+
+```text
+C:\Users\me\Projects\ccbridge
+→ /home/me/projects/ccbridge
+```
+
+This mapping changes the target `cwd`; it does not rewrite the original archived transcript or raw provider payloads.
+
 ## Fidelity report
 
 Before migrating, inspect what the target can represent directly:
@@ -103,13 +156,7 @@ Before migrating, inspect what the target can represent directly:
 ccbridge fidelity claude opencode <session-id> --all
 ```
 
-The report separates:
-
-- direct target representation, such as visible text and supported tool history;
-- provider-private or unknown data that is bundle-only;
-- lossless archive preservation.
-
-Native importer routes do not receive a made-up numeric fidelity score unless the adapter explicitly declares a lossless guarantee.
+The report separates direct target representation from provider-private or unknown data that is archive-only. Native importer routes do not receive a made-up numeric fidelity score unless the adapter explicitly declares a lossless guarantee.
 
 ## Strict lossless mode
 
@@ -130,6 +177,7 @@ visible text
 historical tool calls
 historical tool results
 supported system context
+attachments/files where the target can represent them
 ```
 
 Lossless mode additionally preserves source-private material where available:
@@ -143,6 +191,7 @@ tool metadata
 checkpoints / rewinds
 unknown future records
 native source artifacts
+attachment bytes and references
 ```
 
 Provider-private reasoning is not blindly rewritten into another provider's reasoning schema. It remains available in the lossless archive when the target cannot safely represent it.
@@ -186,8 +235,6 @@ CCBRIDGE_ANTIGRAVITY_HOME
 CCBRIDGE_HOME
 ```
 
-Windows and Linux are supported runtime targets. Platform-specific logic is limited to storage/filesystem differences; the archive and transfer model are operating-system agnostic.
-
 ## Safety
 
 Inspect before mutation:
@@ -199,7 +246,7 @@ ccbridge transfer <from> <to> <session> --dry-run
 ccbridge import ./session.ccbridge <target> --dry-run
 ```
 
-Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content and paths. They are written with restrictive permissions where supported.
+Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments and local paths. They are written with restrictive permissions where supported.
 
 ## Status
 
