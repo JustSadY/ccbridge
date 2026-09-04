@@ -11,6 +11,25 @@ const FEATURE_LABELS = {
   metadata: "session metadata"
 };
 
+export const NATIVE_PRESERVATION_CLASSES = Object.freeze(["exact", "remapped", "best-effort"]);
+
+export function nativeImportPreservation(target, format) {
+  if (!target || !format) return "best-effort";
+  const explicit = target.nativeImportPreservation?.[format];
+  if (NATIVE_PRESERVATION_CLASSES.includes(explicit)) return explicit;
+  if ((target.losslessNativeImports ?? []).includes(format)) return "exact";
+  return "best-effort";
+}
+
+export function transferPreservationClass({ route, nativePreservation = null, losslessArchive = false } = {}) {
+  const targetClass = route === "native" ? (nativePreservation ?? "best-effort") : route === "portable" ? "portable" : "none";
+  return {
+    targetClass,
+    sideArchive: Boolean(losslessArchive && route !== "none"),
+    overallClass: losslessArchive && route !== "none" && targetClass !== "exact" ? `${targetClass}+side-archive` : targetClass
+  };
+}
+
 export function analyzeSessionFeatures(session) {
   const counts = Object.fromEntries(Object.keys(FEATURE_LABELS).map((key) => [key, 0]));
   for (const message of session?.messages ?? []) {
@@ -46,17 +65,35 @@ export function evaluatePortableFidelity(session, target, options = {}) {
     features.push({ feature, label: FEATURE_LABELS[feature] ?? feature, count, target: supported ? "preserved" : "not-represented", archive: supported ? "also-preserved" : losslessArchive ? "bundle-only" : "not-preserved" });
   }
 
-  return { directItems: direct, totalItems: total, targetPercent: total ? Math.round((direct / total) * 100) : 100, archivePercent: losslessArchive ? 100 : null, features, targetSupport: support };
+  return {
+    directItems: direct,
+    totalItems: total,
+    targetPercent: total ? Math.round((direct / total) * 100) : 100,
+    archivePercent: losslessArchive ? 100 : null,
+    features,
+    targetSupport: support,
+    preservation: transferPreservationClass({ route: "portable", losslessArchive })
+  };
 }
 
 export function nativeFidelityReport(session, artifact, options = {}) {
+  const nativePreservation = options.nativePreservation ?? "best-effort";
+  const preservation = transferPreservationClass({ route: "native", nativePreservation, losslessArchive: options.losslessArchive === true });
+  const targetPercent = nativePreservation === "exact" ? 100 : null;
+  const note = nativePreservation === "exact"
+    ? "Target explicitly guarantees exact native preservation for this format."
+    : nativePreservation === "remapped"
+      ? "Native payload content is retained, but target-owned context such as project, cwd, path, identity, or indexing may be remapped."
+      : "Native importer selected; ccbridge does not claim exact target fidelity without an explicit target guarantee.";
   return {
     directItems: null,
     totalItems: Object.values(analyzeSessionFeatures(session)).reduce((sum, value) => sum + value, 0),
-    targetPercent: null,
+    targetPercent,
     archivePercent: options.losslessArchive ? 100 : null,
     nativeFormat: artifact?.format ?? null,
-    note: "Native importer selected; ccbridge does not claim a numeric target fidelity without an explicit target guarantee.",
-    features: Object.entries(analyzeSessionFeatures(session)).filter(([, count]) => count).map(([feature, count]) => ({ feature, label: FEATURE_LABELS[feature] ?? feature, count, target: "native-importer-managed", archive: options.losslessArchive ? "preserved" : "not-measured" }))
+    nativePreservation,
+    preservation,
+    note,
+    features: Object.entries(analyzeSessionFeatures(session)).filter(([, count]) => count).map(([feature, count]) => ({ feature, label: FEATURE_LABELS[feature] ?? feature, count, target: nativePreservation === "exact" ? "preserved" : nativePreservation === "remapped" ? "native-remapped" : "native-importer-managed", archive: options.losslessArchive ? "preserved" : "not-measured" }))
   };
 }
