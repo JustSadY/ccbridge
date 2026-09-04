@@ -53,3 +53,30 @@ test("known Qwen private content is schema-valid but still requires explicit tar
   assert.equal(unsupported.target, "not-represented");
   assert.equal(unsupported.archive, "bundle-only");
 });
+
+test("subagent message content participates in strict portable fidelity", () => {
+  const session = {
+    messages: [{ role: "user", content: [{ type: "text", text: "root" }] }],
+    agents: [{
+      id: "agent-1",
+      messages: [{ role: "assistant", content: [{ type: "reasoning", text: "private agent thought" }, { type: "text", text: "agent answer" }] }],
+      events: [{ kind: "agent-raw" }]
+    }],
+    events: [],
+    metadata: {}
+  };
+  const target = { portableSupport: { text: true, subagent: true, reasoning: false, rawEvent: false } };
+  const features = analyzeSessionFeatures(session);
+  assert.equal(features.text, 2);
+  assert.equal(features.reasoning, 1);
+  assert.equal(features.subagent, 1);
+  assert.equal(features.rawEvent, 1);
+
+  const report = evaluatePortableFidelity(session, target, { losslessArchive: true });
+  assert.equal(report.totalItems, 5);
+  assert.equal(report.directItems, 3);
+  assert.equal(report.targetPercent, 60);
+  assert.equal(report.archivePercent, 100);
+  assert.equal(report.features.find((item) => item.feature === "reasoning").target, "not-represented");
+  assert.equal(report.features.find((item) => item.feature === "rawEvent").target, "not-represented");
+});
