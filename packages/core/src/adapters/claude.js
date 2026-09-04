@@ -25,7 +25,7 @@ function flattenClaudeContent(content) {
         isError: item.is_error ?? false
       }));
     }
-    // Claude `thinking` and signatures intentionally do not cross provider boundaries.
+    // Provider-private thinking/signatures intentionally do not cross adapter boundaries.
   }
   return output;
 }
@@ -43,7 +43,8 @@ export class ClaudeCodeAdapter {
     this.id = "claude-code";
     this.name = "Claude Code";
     this.aliases = ["claude", "cc"];
-    this.capabilities = { discover: true, read: true, write: false, nativeExport: true };
+    this.capabilities = { discover: true, read: true, write: false, nativeExport: true, nativeImport: false };
+    this.nativeExports = ["claude-code/session-jsonl"];
     this.home = options.home ?? defaultClaudeHome(options);
   }
 
@@ -137,8 +138,10 @@ export class ClaudeCodeAdapter {
     const sessionPath = await this.resolveSession(sessionRef);
     const summary = await this.#summarize(sessionPath);
     return {
-      kind: "external-agent-session",
-      adapter: this.id,
+      kind: "agent-session",
+      format: "claude-code/session-jsonl",
+      formatVersion: 1,
+      sourceAdapter: this.id,
       path: sessionPath,
       cwd: summary.cwd,
       sessionId: summary.sessionId ?? path.basename(sessionPath, ".jsonl")
