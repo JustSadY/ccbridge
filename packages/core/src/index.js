@@ -10,42 +10,12 @@ export { ClaudeCodeAdapter } from "./adapters/claude.js";
 export { CodexAdapter } from "./adapters/codex.js";
 export { GeminiCliAdapter } from "./adapters/gemini.js";
 export { SessionBridge } from "./bridge.js";
-export {
-  adapterAcceptsNativeArtifact,
-  adapterCapabilities,
-  nativeArtifactFormat,
-  normalizeAdapterId,
-  validateAdapter
-} from "./adapters/contract.js";
+export { adapterAcceptsNativeArtifact, adapterCapabilities, nativeArtifactFormat, normalizeAdapterId, validateAdapter } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
 export { CodexAppServerClient } from "./codex/app-server-client.js";
-export {
-  createPortableSession,
-  normalizeTransferMode,
-  rawEvent,
-  reasoningContent,
-  textContent,
-  toolCallContent,
-  toolResultContent,
-  TRANSFER_MODES,
-  validatePortableSession,
-  PORTABLE_SESSION_VERSION
-} from "./model.js";
-export {
-  defaultCcbridgeHome,
-  LOSSLESS_BUNDLE_FORMAT,
-  LOSSLESS_BUNDLE_VERSION,
-  writeLosslessBundle
-} from "./lossless/archive.js";
-export {
-  detectRuntime,
-  defaultClaudeHome,
-  defaultCodexHome,
-  defaultGeminiHome,
-  normalizePathKey,
-  windowsPathToWsl,
-  wslPathToWindows
-} from "./platform/paths.js";
+export { createPortableSession, normalizeTransferMode, rawEvent, reasoningContent, textContent, toolCallContent, toolResultContent, TRANSFER_MODES, validatePortableSession, PORTABLE_SESSION_VERSION } from "./model.js";
+export { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, defaultCcbridgeHome, LEGACY_LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_VERSION, materializeCcbridgeNative, readCcbridgeArchive, validateCcbridgeArchive, writeCcbridgeArchive, writeLosslessBundle } from "./lossless/archive.js";
+export { detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, normalizePathKey, windowsPathToWsl, wslPathToWindows } from "./platform/paths.js";
 
 export function createDefaultRegistry(options = {}) {
   const registry = new AdapterRegistry();
@@ -54,11 +24,7 @@ export function createDefaultRegistry(options = {}) {
   registry.register(new GeminiCliAdapter(options.gemini));
   return registry;
 }
-
-export function createDefaultBridge(options = {}) {
-  return new SessionBridge(createDefaultRegistry(options));
-}
-
+export function createDefaultBridge(options = {}) { return new SessionBridge(createDefaultRegistry(options)); }
 export async function createBridgeWithPlugins(options = {}) {
   const registry = createDefaultRegistry(options);
   await registerAdapterModules(registry, options.plugins ?? [], options.pluginOptions ?? {});
