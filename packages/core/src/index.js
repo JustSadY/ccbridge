@@ -17,7 +17,7 @@ export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport 
 export { adapterAcceptsNativeArtifact, adapterCapabilities, nativeArtifactFormat, normalizeAdapterId, validateAdapter } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
 export { CodexAppServerClient } from "./codex/app-server-client.js";
-export { attachmentContent, createPortableSession, normalizeTransferMode, rawEvent, reasoningContent, textContent, toolCallContent, toolResultContent, TRANSFER_MODES, validatePortableSession, PORTABLE_SESSION_VERSION } from "./model.js";
+export { attachmentContent, createPortableAgent, createPortableSession, normalizeTransferMode, rawEvent, reasoningContent, textContent, toolCallContent, toolResultContent, TRANSFER_MODES, validatePortableSession, PORTABLE_SESSION_VERSION } from "./model.js";
 export { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, defaultCcbridgeHome, LEGACY_LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_VERSION, materializeCcbridgeAttachments, materializeCcbridgeNative, readCcbridgeArchive, validateCcbridgeArchive, writeCcbridgeArchive, writeLosslessBundle } from "./lossless/archive.js";
 export { detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, defaultAntigravityCliHome, normalizePathKey, windowsPathToWsl, wslPathToWindows } from "./platform/paths.js";
 export { TARGET_PROFILES, applyCwdMappings, normalizeCwdMappings, parseCwdMapping, resolveTargetCwd, resolveTargetCwdDetailed } from "./platform/cwd-map.js";
