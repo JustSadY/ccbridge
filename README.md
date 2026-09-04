@@ -19,7 +19,7 @@ packages/
 | Claude Code | yes | yes | yes | no | exports Claude session JSONL; Codex/Goose can import it |
 | OpenAI Codex | yes | yes | yes | no | imports Claude JSONL via app-server; Goose can import Codex JSONL |
 | Gemini CLI | yes | yes | yes | no | no target importer yet |
-| OpenCode | yes | yes | yes | yes | official `export` / `import` JSON |
+| OpenCode | yes | yes | yes | yes | official `export` / `import` JSON; native import is remapped |
 | Antigravity CLI | yes | no | native-only | no | SQLite + WAL/SHM lossless export |
 | Aider | yes | yes | yes | no | Markdown history export/read |
 | Cline | yes | yes | yes | no | canonical `messages.json` v1 export/read |
@@ -27,9 +27,9 @@ packages/
 | Continue | exported transcripts | yes | yes | no | official Markdown transcript read/export |
 | Cursor | yes | yes | yes | no | agent transcript JSONL + subagent companions |
 | VS Code Chat / GitHub Copilot | yes | yes | yes | no | open-source `.json` / mutation-log `.jsonl` chat store |
-| Goose | yes | yes | yes | no | official CLI session export/import |
+| Goose | yes | yes | yes | no | official CLI session export/import; self-import is remapped |
 | Pi Coding Agent | yes | yes | yes | no | native session-tree JSONL; Goose can import it |
-| Kilo Code | yes | yes | yes | yes | current official CLI JSON plus legacy Roo-compatible task store |
+| Kilo Code | yes | yes | yes | yes | current official CLI JSON plus legacy Roo-compatible task store; native import is remapped |
 
 Codex imports use `codex app-server` / `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly. OpenCode, Goose and current Kilo use official CLI import/export surfaces instead of touching private databases. Roo Code is read/export-only because its upstream repository is archived. Continue uses the provider's explicit transcript export rather than assuming a private live-session store. Pi sessions are tree-structured: portable reads follow the active leaf/current compaction context while lossless mode preserves inactive branches as raw events. Kilo supports both the current CLI backend and older extension task files; current sessions are preferred, and ambiguous ids can be addressed with `current:<id>` or `legacy:<id>`.
 
@@ -74,6 +74,26 @@ ccbridge inspect pi <session-id> --all
 ccbridge inspect kilo current:<session-id> --all
 ccbridge inspect kilo legacy:<task-id> --all
 ```
+
+## Route matrix and preservation classes
+
+```bash
+ccbridge routes
+ccbridge routes claude codex
+ccbridge routes opencode opencode
+ccbridge routes pi goose --json
+```
+
+`routes` is static: it does not open a session or mutate a target. Native formats and adapter capabilities are used to show the preferred route and its preservation class.
+
+Target preservation classes are:
+
+- `exact` — audited native round-trip with no semantically relevant target rewrite. No current built-in claims this unless an adapter is explicitly audited for it.
+- `remapped` — native conversation/message data is retained but target-owned session context such as id, project, cwd/path, session type or similar metadata is recreated or rewritten.
+- `best-effort` — an official/native importer accepts the source format, but ccbridge cannot prove a bounded or exact round-trip.
+- `portable` — the source is normalized through `PortableSession` and written through a target portable writer.
+
+Lossless `--all` adds a separate `.ccbridge` side archive. For example `remapped+side-archive` means the target session is remapped while the source-private/raw data is additionally retained in the archive. A side archive never upgrades target fidelity to `exact`.
 
 ## Compatibility / schema drift
 
@@ -148,9 +168,9 @@ ccbridge transfer kilo opencode current:<session-id> --all
 ccbridge transfer claude kilo <session-id> --all
 ```
 
-Goose's official `session import` accepts Goose JSON plus Claude Code, Codex and Pi JSONL. These cross-provider native routes are intentionally not marked `strict-lossless`: provider-private fields remain protected by the `.ccbridge` side archive when `--all` is used. Goose JSON -> Goose is the only Goose native route currently advertised as a strict native-lossless import.
+Goose's official `session import` accepts Goose JSON plus Claude Code, Codex and Pi JSONL. Cross-provider imports remain `best-effort`. Goose JSON -> Goose is `remapped`, not `exact`: current Goose creates a new session identity, overrides the imported session type to `User`, and does not restore every exported session-level metadata field. With `--all`, the original Goose JSON remains available in the `.ccbridge` side archive.
 
-Current Kilo and OpenCode use the same export/import data family. Kilo accepts `kilo/session-json` and OpenCode-compatible session JSON; only Kilo-native JSON -> Kilo is marked strict native-lossless. Legacy Kilo task files are read/export-only because current Kilo does not provide a guaranteed lossless migration of that old task format.
+Current Kilo and OpenCode use the same export/import data family. Their current official importers rewrite target-owned project/directory/path context, so native self-import and OpenCode -> Kilo native import are `remapped`. Under `--strict-lossless`, ccbridge does not use those native routes as exact. If the actual session can be represented 100% by the target's portable writer, strict mode switches to that portable route; otherwise it blocks before target mutation. Legacy Kilo task files remain read/export-only.
 
 Antigravity is currently native-only, so semantic `antigravity -> codex/opencode` transfer is rejected rather than silently importing an empty conversation.
 
@@ -183,10 +203,15 @@ Supported profiles are `native`, `windows`, `wsl`, and `linux`.
 
 ```bash
 ccbridge fidelity claude opencode <session-id> --all
+ccbridge transfer <from> <to> <session> --strict-lossless --dry-run
 ccbridge transfer <from> <to> <session> --strict-lossless
 ```
 
-Normal `--all` transfers representable data while preserving the rest in the `.ccbridge` archive. Strict mode blocks target mutation when known source features cannot be represented directly.
+Normal `--all` transfers use the best available target route while preserving the complete lossless source representation in a `.ccbridge` side archive when the source adapter can provide it.
+
+`--strict-lossless` requires a provable 100% target representation. It first accepts an audited `exact` native route. For a `remapped` or `best-effort` native route, it evaluates the actual lossless session against an available portable writer; if every observed source feature is representable, strict mode switches to portable. Otherwise it blocks before target mutation.
+
+See [docs/FIDELITY.md](docs/FIDELITY.md) for the preservation contract.
 
 ## Persistent and one-off plugins
 
@@ -202,7 +227,7 @@ CCBRIDGE_PLUGINS=@example/a,./local-adapter.js ccbridge scan
 
 Persistent plugins are stored under `CCBRIDGE_HOME/plugins.json`. Plugin management does not run npm/pnpm automatically. Plugins are executable code; only load modules you trust.
 
-See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), [docs/ARCHIVE.md](docs/ARCHIVE.md), [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), and [docs/ANTIGRAVITY.md](docs/ANTIGRAVITY.md).
+See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), [docs/ARCHIVE.md](docs/ARCHIVE.md), [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), [docs/FIDELITY.md](docs/FIDELITY.md), and [docs/ANTIGRAVITY.md](docs/ANTIGRAVITY.md).
 
 ## Local stores / source artifacts
 
@@ -228,8 +253,8 @@ Important environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMI
 
 ## Safety
 
-Use `fidelity`, `plan`, `verify`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments, subagent transcripts, inactive branches and local paths.
+Use `routes`, `fidelity`, `plan`, `verify`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments, subagent transcripts, inactive branches and local paths.
 
 ## Status
 
-Early development. Native session formats can change; adapters prefer official/versioned import/export interfaces and fail explicitly rather than guessing unsupported private schemas.
+Early development. Native session formats can change; adapters prefer official/versioned import/export interfaces and fail explicitly rather than guessing unsupported private schemas. Preservation classes are intentionally conservative: unsupported or unaudited native import behavior is never promoted to `exact` merely because an import command succeeds.
