@@ -8,7 +8,10 @@ function stable(value) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
 }
-function digest(value) { return createHash("sha256").update(JSON.stringify(stable(value))).digest("hex"); }
+function digest(value) {
+  const serialized = JSON.stringify(stable(value));
+  return createHash("sha256").update(serialized === undefined ? "__ccbridge_undefined__" : serialized).digest("hex");
+}
 function dataDigest(data, encoding = "base64") {
   if (typeof data !== "string") return null;
   try { return createHash("sha256").update(Buffer.from(data, encoding === "base64" ? "base64" : "utf8")).digest("hex"); }
@@ -100,11 +103,13 @@ function topLevelMetadataDiff(left = {}, right = {}, limit = 50) {
   const changed = [];
   let count = 0;
   for (const key of keys) {
-    const a = digest(left[key]);
-    const b = digest(right[key]);
-    if (a === b) continue;
+    const leftPresent = Object.hasOwn(left, key);
+    const rightPresent = Object.hasOwn(right, key);
+    const a = digest(leftPresent ? left[key] : undefined);
+    const b = digest(rightPresent ? right[key] : undefined);
+    if (a === b && leftPresent === rightPresent) continue;
     count += 1;
-    if (changed.length < limit) changed.push({ key, leftDigest: a, rightDigest: b, leftPresent: Object.hasOwn(left, key), rightPresent: Object.hasOwn(right, key) });
+    if (changed.length < limit) changed.push({ key, leftDigest: a, rightDigest: b, leftPresent, rightPresent });
   }
   return { changedCount: count, changed, truncated: count > changed.length };
 }
@@ -120,16 +125,20 @@ export function diffPortableSessions(left, right, options = {}) {
   const messages = compareMultiset(left?.messages ?? [], right?.messages ?? [], (item) => digest(semanticMessage(item)), "message", limit);
   const agents = compareMultiset(left?.agents ?? [], right?.agents ?? [], (item) => digest(semanticAgent(item)), "agent", limit);
   const events = compareMultiset(left?.events ?? [], right?.events ?? [], (item) => digest(semanticEvent(item)), "event", limit);
-  const exactSemanticEqual = messages.leftOnlyCount === 0 && messages.rightOnlyCount === 0 && agents.leftOnlyCount === 0 && agents.rightOnlyCount === 0 && events.leftOnlyCount === 0 && events.rightOnlyCount === 0 && digest(left?.metadata ?? {}) === digest(right?.metadata ?? {}) && digest(left?.lossless ?? null) === digest(right?.lossless ?? null);
+  const metadata = topLevelMetadataDiff(left?.metadata ?? {}, right?.metadata ?? {}, limit);
+  const contentEqual = messages.leftOnlyCount === 0 && messages.rightOnlyCount === 0 && agents.leftOnlyCount === 0 && agents.rightOnlyCount === 0 && events.leftOnlyCount === 0 && events.rightOnlyCount === 0;
+  const contextEqual = left?.cwd === right?.cwd && left?.title === right?.title && metadata.changedCount === 0 && digest(left?.lossless ?? null) === digest(right?.lossless ?? null);
   return {
-    equal: exactSemanticEqual,
+    equal: contentEqual && contextEqual,
+    contentEqual,
+    contextEqual,
     left: { id: left?.id ?? null, source: left?.source ?? null, cwd: left?.cwd ?? null, title: left?.title ?? null },
     right: { id: right?.id ?? null, source: right?.source ?? null, cwd: right?.cwd ?? null, title: right?.title ?? null },
     messages: { ...messages, changedById: changedById(left?.messages ?? [], right?.messages ?? [], semanticMessage, "message", limit) },
     agents: { ...agents, changedById: changedById(left?.agents ?? [], right?.agents ?? [], semanticAgent, "agent", limit) },
     events,
     features: featureDiff(left, right),
-    metadata: topLevelMetadataDiff(left?.metadata ?? {}, right?.metadata ?? {}, limit),
+    metadata,
     losslessDescriptorChanged: digest(left?.lossless ?? null) !== digest(right?.lossless ?? null),
     cwdChanged: left?.cwd !== right?.cwd,
     titleChanged: left?.title !== right?.title
