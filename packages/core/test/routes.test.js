@@ -11,7 +11,7 @@ function row(matrix, from, to) {
 test("static route matrix describes native and portable priorities without reading sessions", () => {
   const bridge = createDefaultBridge();
   const matrix = bridge.routes();
-  assert.equal(matrix.adapterCount, 14);
+  assert.equal(matrix.adapterCount, 15);
 
   const claudeCodex = row(matrix, "claude-code", "codex");
   assert.equal(claudeCodex.route, "native");
@@ -21,6 +21,12 @@ test("static route matrix describes native and portable priorities without readi
   assert.equal(aiderOpenCode.route, "portable");
   assert.equal(aiderOpenCode.portable, true);
   assert.equal(aiderOpenCode.preservation.targetClass, "portable");
+
+  const qwenOpenCode = row(matrix, "qwen-code", "opencode");
+  assert.equal(qwenOpenCode.route, "portable");
+  assert.equal(qwenOpenCode.portable, true);
+  assert.equal(qwenOpenCode.preservation.targetClass, "portable");
+  assert.equal(qwenOpenCode.lossless.route, "portable+archive");
 
   const antigravityOpenCode = row(matrix, "antigravity-cli", "opencode");
   assert.equal(antigravityOpenCode.route, "none");
