@@ -52,7 +52,11 @@ export class KiloCodeAdapter {
     this.portableSupport = { text: true, toolCall: true, toolResult: true, system: true, reasoning: false, attachment: true, unknownContent: false, rawEvent: false, metadata: true };
     this.nativeExports = ["kilo/session-json", "kilo/legacy-task-files-v1"];
     this.nativeImports = ["kilo/session-json", "opencode/session-json"];
-    this.losslessNativeImports = ["kilo/session-json"];
+    this.losslessNativeImports = [];
+    this.nativeImportPreservation = {
+      "kilo/session-json": "remapped",
+      "opencode/session-json": "remapped"
+    };
     this.command = options.command ?? "kilo";
     this.current = new OpenCodeAdapter({ command: this.command, runner: options.runner });
     this.current.id = this.id;
@@ -123,11 +127,11 @@ export class KiloCodeAdapter {
     if (!await this.acceptsNativeArtifact(artifact)) throw new Error(`Kilo Code cannot import native format: ${artifact?.format ?? "unknown"}`);
     const normalized = artifact.format === "kilo/session-json" ? { ...artifact, format: "opencode/session-json" } : artifact;
     const result = await this.current.importNativeArtifact(normalized, options);
-    return { ...result, target: this.id, sourceFormat: artifact.format };
+    return { ...result, target: this.id, sourceFormat: artifact.format, preservation: this.nativeImportPreservation[artifact.format] ?? "best-effort" };
   }
 
   async writePortableSession(session, options = {}) {
     const result = await this.current.writePortableSession(session, options);
-    return { ...result, target: this.id };
+    return { ...result, target: this.id, preservation: "portable" };
   }
 }
