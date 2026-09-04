@@ -36,6 +36,11 @@ function entryBytes(entry) {
   throw new Error(`Unsupported ccbridge entry encoding: ${entry?.encoding ?? "unknown"}`);
 }
 function descriptor(entry) { const { content: _content, ...metadata } = entry; return metadata; }
+function messageScopes(session) {
+  const scopes = [{ id: "root", messages: session?.messages ?? [] }];
+  for (const agent of session?.agents ?? []) scopes.push({ id: `agents/${safeName(agent.id)}`, messages: agent.messages ?? [] });
+  return scopes;
+}
 function attachmentName(part, messageIndex, partIndex) {
   if (part?.name) return safeName(part.name);
   if (part?.filename) return safeName(part.filename);
@@ -53,22 +58,21 @@ async function bytesForAttachment(part) {
   if (typeof part?.data === "string") return Buffer.from(part.data, part.encoding === "base64" ? "base64" : "utf8");
   return dataUrlBytes(part?.uri);
 }
-function uniqueEntryPath(entries, filename, messageIndex, partIndex) {
+function uniqueEntryPath(entries, scopeId, filename, messageIndex, partIndex) {
   const used = new Set(entries.map((entry) => entry.path));
   const base = `${String(messageIndex + 1).padStart(4, "0")}-${String(partIndex + 1).padStart(3, "0")}-${filename}`;
-  let candidate = `attachments/${base}`;
+  const prefix = scopeId === "root" ? "attachments" : `attachments/${scopeId}`;
+  let candidate = `${prefix}/${base}`;
   let suffix = 2;
   while (used.has(candidate)) {
     const extension = path.extname(base);
     const stem = extension ? base.slice(0, -extension.length) : base;
-    candidate = `attachments/${stem}-${suffix}${extension}`;
+    candidate = `${prefix}/${stem}-${suffix}${extension}`;
     suffix += 1;
   }
   return candidate;
 }
-function makeAttachmentEntry(entryPath, bytes, mimeType) {
-  return { path: entryPath, mediaType: mimeType || "application/octet-stream", bytes: bytes.length, sha256: sha256(bytes), encoding: "base64", content: bytes.toString("base64") };
-}
+function makeAttachmentEntry(entryPath, bytes, mimeType) { return { path: entryPath, mediaType: mimeType || "application/octet-stream", bytes: bytes.length, sha256: sha256(bytes), encoding: "base64", content: bytes.toString("base64") }; }
 function portableEntry(archive) {
   const entry = archive.entries?.find((item) => item?.path === "portable/session.json");
   if (!entry) throw new Error("Missing ccbridge entry: portable/session.json");
@@ -89,31 +93,27 @@ async function embedAttachments(archive) {
   const additions = [];
   const warnings = [];
   let embedded = 0;
-  for (let messageIndex = 0; messageIndex < (portable.messages ?? []).length; messageIndex += 1) {
-    const message = portable.messages[messageIndex];
-    for (let partIndex = 0; partIndex < (message.content ?? []).length; partIndex += 1) {
-      const part = message.content[partIndex];
-      if (!isAttachmentPart(part) || part.archiveEntry) continue;
-      let bytes;
-      try { bytes = await bytesForAttachment(part); }
-      catch (error) {
-        warnings.push({ messageIndex, partIndex, name: part?.name ?? part?.filename ?? null, path: part?.path ?? null, error: error?.code ?? error?.message ?? "unreadable" });
-        continue;
+  for (const scope of messageScopes(portable)) {
+    for (let messageIndex = 0; messageIndex < scope.messages.length; messageIndex += 1) {
+      const message = scope.messages[messageIndex];
+      for (let partIndex = 0; partIndex < (message.content ?? []).length; partIndex += 1) {
+        const part = message.content[partIndex];
+        if (!isAttachmentPart(part) || part.archiveEntry) continue;
+        let bytes;
+        try { bytes = await bytesForAttachment(part); }
+        catch (error) { warnings.push({ scope: scope.id, messageIndex, partIndex, name: part?.name ?? part?.filename ?? null, path: part?.path ?? null, error: error?.code ?? error?.message ?? "unreadable" }); continue; }
+        if (!bytes) { warnings.push({ scope: scope.id, messageIndex, partIndex, name: part?.name ?? part?.filename ?? null, path: part?.path ?? null, error: "no-local-bytes" }); continue; }
+        const filename = attachmentName(part, messageIndex, partIndex);
+        const entryPath = uniqueEntryPath([...archive.entries, ...additions], scope.id, filename, messageIndex, partIndex);
+        const entry = makeAttachmentEntry(entryPath, bytes, part?.mimeType ?? part?.mime);
+        additions.push(entry);
+        part.archiveEntry = entryPath;
+        part.size = entry.bytes;
+        part.sha256 = entry.sha256;
+        delete part.data;
+        delete part.encoding;
+        embedded += 1;
       }
-      if (!bytes) {
-        warnings.push({ messageIndex, partIndex, name: part?.name ?? part?.filename ?? null, path: part?.path ?? null, error: "no-local-bytes" });
-        continue;
-      }
-      const filename = attachmentName(part, messageIndex, partIndex);
-      const entryPath = uniqueEntryPath([...archive.entries, ...additions], filename, messageIndex, partIndex);
-      const entry = makeAttachmentEntry(entryPath, bytes, part?.mimeType ?? part?.mime);
-      additions.push(entry);
-      part.archiveEntry = entryPath;
-      part.size = entry.bytes;
-      part.sha256 = entry.sha256;
-      delete part.data;
-      delete part.encoding;
-      embedded += 1;
     }
   }
   updatePortableEntry(pEntry, portable);
@@ -125,17 +125,19 @@ async function embedAttachments(archive) {
 }
 function rehydrateAttachments(archive) {
   const entryMap = new Map((archive.entries ?? []).map((entry) => [entry.path, entry]));
-  for (const message of archive.session?.messages ?? []) {
-    for (const part of message.content ?? []) {
-      if (!isAttachmentPart(part) || !part.archiveEntry) continue;
-      const entry = entryMap.get(part.archiveEntry);
-      if (!entry) throw new Error(`Missing attachment entry: ${part.archiveEntry}`);
-      const bytes = entryBytes(entry);
-      if (bytes.length !== entry.bytes || sha256(bytes) !== entry.sha256) throw new Error(`ccbridge attachment integrity mismatch: ${part.archiveEntry}`);
-      part.size = entry.bytes;
-      part.sha256 = entry.sha256;
-      part.data = entry.content;
-      part.encoding = entry.encoding;
+  for (const scope of messageScopes(archive.session)) {
+    for (const message of scope.messages) {
+      for (const part of message.content ?? []) {
+        if (!isAttachmentPart(part) || !part.archiveEntry) continue;
+        const entry = entryMap.get(part.archiveEntry);
+        if (!entry) throw new Error(`Missing attachment entry: ${part.archiveEntry}`);
+        const bytes = entryBytes(entry);
+        if (bytes.length !== entry.bytes || sha256(bytes) !== entry.sha256) throw new Error(`ccbridge attachment integrity mismatch: ${part.archiveEntry}`);
+        part.size = entry.bytes;
+        part.sha256 = entry.sha256;
+        part.data = entry.content;
+        part.encoding = entry.encoding;
+      }
     }
   }
   return archive;
@@ -160,41 +162,35 @@ export async function materializeCcbridgeAttachments(archiveInput, options = {})
   let root = options.directory ? path.resolve(options.directory) : null;
   let count = 0;
   const used = new Set();
-  for (let messageIndex = 0; messageIndex < (session.messages ?? []).length; messageIndex += 1) {
-    const message = session.messages[messageIndex];
-    for (let partIndex = 0; partIndex < (message.content ?? []).length; partIndex += 1) {
-      const part = message.content[partIndex];
-      if (!isAttachmentPart(part) || !part.archiveEntry || typeof part.data !== "string") continue;
-      if (!root) root = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-attachments-"));
-      else if (count === 0 && options.directory) await fs.mkdir(root, { recursive: true });
-      const base = attachmentName(part, messageIndex, partIndex);
-      let filename = base;
-      let suffix = 2;
-      while (used.has(filename)) {
-        const extension = path.extname(base);
-        const stem = extension ? base.slice(0, -extension.length) : base;
-        filename = `${stem}-${suffix}${extension}`;
-        suffix += 1;
+  for (const scope of messageScopes(session)) {
+    for (let messageIndex = 0; messageIndex < scope.messages.length; messageIndex += 1) {
+      const message = scope.messages[messageIndex];
+      for (let partIndex = 0; partIndex < (message.content ?? []).length; partIndex += 1) {
+        const part = message.content[partIndex];
+        if (!isAttachmentPart(part) || !part.archiveEntry || typeof part.data !== "string") continue;
+        if (!root) root = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-attachments-"));
+        else if (count === 0 && options.directory) await fs.mkdir(root, { recursive: true });
+        const prefix = scope.id === "root" ? "" : `${safeName(scope.id.replaceAll("/", "-"))}-`;
+        const base = `${prefix}${attachmentName(part, messageIndex, partIndex)}`;
+        let filename = base;
+        let suffix = 2;
+        while (used.has(filename)) {
+          const extension = path.extname(base);
+          const stem = extension ? base.slice(0, -extension.length) : base;
+          filename = `${stem}-${suffix}${extension}`;
+          suffix += 1;
+        }
+        used.add(filename);
+        const filePath = path.join(root, filename);
+        const bytes = Buffer.from(part.data, part.encoding === "base64" ? "base64" : "utf8");
+        await fs.writeFile(filePath, bytes, { mode: 0o600 });
+        part.path = filePath;
+        count += 1;
       }
-      used.add(filename);
-      const filePath = path.join(root, filename);
-      const bytes = Buffer.from(part.data, part.encoding === "base64" ? "base64" : "utf8");
-      await fs.writeFile(filePath, bytes, { mode: 0o600 });
-      part.path = filePath;
-      count += 1;
     }
   }
   let cleaned = false;
-  return {
-    session,
-    directory: root,
-    count,
-    async cleanup() {
-      if (cleaned) return;
-      cleaned = true;
-      if (root && !options.directory) await fs.rm(root, { recursive: true, force: true });
-    }
-  };
+  return { session, directory: root, count, async cleanup() { if (cleaned) return; cleaned = true; if (root && !options.directory) await fs.rm(root, { recursive: true, force: true }); } };
 }
 export async function writeLosslessBundle(session, options = {}) {
   if (!session?.lossless?.enabled) throw new Error("Lossless bundle requires a session read in lossless mode");
