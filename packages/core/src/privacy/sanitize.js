@@ -4,7 +4,7 @@ import { readCcbridgeArchive, writeCcbridgeArchive } from "../lossless/archive.j
 const REDACTED = "[REDACTED]";
 const EXCLUDED_ENV = "[ENV EXCLUDED]";
 const EXCLUDED_FILE = "[FILE PAYLOAD EXCLUDED]";
-const SECRET_KEY = /(?:^|[_-])(api[_-]?key|access[_-]?token|auth[_-]?token|bearer|client[_-]?secret|password|passwd|private[_-]?key|refresh[_-]?token|session[_-]?token|secret)(?:$|[_-])/i;
+const SECRET_FIELDS = new Set(["apikey", "accesstoken", "authtoken", "bearer", "clientsecret", "password", "passwd", "privatekey", "refreshtoken", "sessiontoken", "secret"]);
 const ENV_KEY = /^(?:env|environment|processenv|process_env|environmentvariables|environment_variables)$/i;
 const FILE_PATH_KEY = /^(?:path|file_path|filepath|filename|file|uri)$/i;
 const FILE_PAYLOAD_KEY = /^(?:content|contents|file_content|filecontent|data|bytes|body)$/i;
@@ -18,12 +18,18 @@ const SECRET_PATTERNS = [
   /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)* PRIVATE KEY-----/g
 ];
 
+function isSecretKey(key) {
+  const normalized = String(key ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (SECRET_FIELDS.has(normalized)) return true;
+  return normalized.endsWith("password") || normalized.endsWith("passwd") || normalized.endsWith("secret") || normalized.endsWith("apikey") || normalized.endsWith("accesstoken") || normalized.endsWith("authtoken") || normalized.endsWith("refreshtoken") || normalized.endsWith("sessiontoken") || normalized.endsWith("privatekey");
+}
+
 function replaceSecrets(value, report) {
   let output = String(value);
   for (const pattern of SECRET_PATTERNS) {
     output = output.replace(pattern, () => { report.secretsRedacted += 1; return REDACTED; });
   }
-  output = output.replace(/([A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY)[A-Za-z0-9_]*)\s*=\s*([^\s\r\n]+)/gi, (full, key) => {
+  output = output.replace(/([A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY)[A-Za-z0-9_]*)\s*=\s*([^\s\r\n]+)/gi, (_full, key) => {
     report.secretsRedacted += 1;
     return `${key}=${REDACTED}`;
   });
@@ -72,7 +78,7 @@ function sanitizeObject(value, options, report) {
       report.envValuesExcluded += 1;
       continue;
     }
-    if (options.redactSecrets && SECRET_KEY.test(key) && raw !== null && raw !== undefined) {
+    if (options.redactSecrets && isSecretKey(key) && raw !== null && raw !== undefined) {
       output[key] = REDACTED;
       report.secretsRedacted += 1;
       continue;
