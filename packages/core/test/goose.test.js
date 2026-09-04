@@ -91,11 +91,12 @@ test("Goose lossless mode preserves thinking/redacted thinking and raw messages"
   assert.equal(session.lossless.sourceFormat, "goose/session-json");
 });
 
-test("Goose native target accepts official Goose, Claude and Codex imports but strict guarantee is Goose-only", async () => {
+test("Goose native target accepts Goose, Claude, Codex and Pi while strict guarantee is Goose-only", async () => {
   const adapter = new GooseAdapter({ runner: mockRunner([]) });
   assert.equal(await adapter.acceptsNativeArtifact({ format: "goose/session-json" }), true);
   assert.equal(await adapter.acceptsNativeArtifact({ format: "claude-code/session-jsonl" }), true);
   assert.equal(await adapter.acceptsNativeArtifact({ format: "codex/rollout-jsonl" }), true);
+  assert.equal(await adapter.acceptsNativeArtifact({ format: "pi/session-jsonl" }), true);
   assert.deepEqual(adapter.losslessNativeImports, ["goose/session-json"]);
 });
 
