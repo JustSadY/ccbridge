@@ -22,6 +22,10 @@ export function defaultCodexHome({ env = process.env, home = os.homedir() } = {}
   return env.CODEX_HOME || path.join(home, ".codex");
 }
 
+export function defaultGeminiHome({ home = os.homedir() } = {}) {
+  return path.join(home, ".gemini");
+}
+
 export function normalizePathKey(input, platform = process.platform) {
   if (!input) return "";
   let value = String(input).trim();
