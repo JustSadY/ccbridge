@@ -91,13 +91,14 @@ test("Goose lossless mode preserves thinking/redacted thinking and raw messages"
   assert.equal(session.lossless.sourceFormat, "goose/session-json");
 });
 
-test("Goose native target accepts Goose, Claude, Codex and Pi while strict guarantee is Goose-only", async () => {
+test("Goose native target accepts Goose, Claude, Codex and Pi but exposes no exact native guarantee", async () => {
   const adapter = new GooseAdapter({ runner: mockRunner([]) });
   assert.equal(await adapter.acceptsNativeArtifact({ format: "goose/session-json" }), true);
   assert.equal(await adapter.acceptsNativeArtifact({ format: "claude-code/session-jsonl" }), true);
   assert.equal(await adapter.acceptsNativeArtifact({ format: "codex/rollout-jsonl" }), true);
   assert.equal(await adapter.acceptsNativeArtifact({ format: "pi/session-jsonl" }), true);
-  assert.deepEqual(adapter.losslessNativeImports, ["goose/session-json"]);
+  assert.deepEqual(adapter.losslessNativeImports, []);
+  assert.equal(adapter.nativeImportPreservation["goose/session-json"], "remapped");
 });
 
 test("Goose native import materializes in-memory artifacts and parses target id", async () => {
@@ -108,5 +109,12 @@ test("Goose native import materializes in-memory artifacts and parses target id"
   assert.equal(result.sourceFormat, "claude-code/session-jsonl");
   assert.equal(result.targetSessionId, "goose-target");
   assert.equal(result.targetName, "Imported session");
+  assert.equal(result.preservation, "best-effort");
   assert.ok(calls.some((args) => args[0] === "session" && args[1] === "import"));
+});
+
+test("Goose self native import reports remapped preservation", async () => {
+  const adapter = new GooseAdapter({ runner: mockRunner([]) });
+  const result = await adapter.importNativeArtifact({ format: "goose/session-json", content: `${JSON.stringify(exportedSession())}\n`, encoding: "utf8", sessionId: "goose-1" });
+  assert.equal(result.preservation, "remapped");
 });
