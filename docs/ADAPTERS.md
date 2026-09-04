@@ -12,9 +12,9 @@ An adapter may implement any subset of these operations:
 - `importNativeArtifact(artifact, options)` — import a compatible native artifact.
 - `writePortableSession(session, options)` — write the normalized/lossless portable model.
 
-The bridge plans transfers in this order: compatible native artifact route, portable-session route, then explicit error.
+The bridge plans normal transfers in this order: compatible native artifact route, portable-session route, then explicit error. Strict-lossless planning is more conservative and may choose a portable route instead of a compatible native importer when the native importer is not audited as exact.
 
-In `lossless` mode the bridge also requires the source reader to return lossless data and writes a ccbridge sidecar bundle after a successful transfer.
+In `lossless` mode the bridge also requires the source reader to return lossless data and writes a ccbridge side archive after a successful transfer.
 
 ## Native artifact compatibility
 
@@ -37,6 +37,39 @@ nativeImports = ["vendor/session-jsonl"];
 ```
 
 This prevents unrelated adapters from attempting to import each other's private files merely because both expose native import/export methods.
+
+Compatibility and fidelity are different. `nativeImports` only says that the target accepts a format; it does not mean the import is lossless.
+
+## Native preservation contract
+
+A target may describe audited native behavior with:
+
+```js
+nativeImportPreservation = {
+  "vendor/session-json": "remapped",
+  "vendor/legacy-json": "best-effort"
+};
+```
+
+Allowed explicit native classes are:
+
+- `exact` — audited native round-trip without semantically relevant target-side rewrites.
+- `remapped` — native conversation/message data is retained, while target-owned identity/context such as session id, project, cwd/path or session type is recreated or changed.
+- `best-effort` — the importer accepts the format, but ccbridge cannot prove an exact or bounded remapped round-trip.
+
+A format omitted from `nativeImportPreservation` defaults to `best-effort`.
+
+The older field remains supported:
+
+```js
+losslessNativeImports = ["vendor/session-json"];
+```
+
+A format listed there is treated as `exact` only when no explicit `nativeImportPreservation[format]` is present. New adapters should prefer the explicit map because it makes remapped behavior visible.
+
+Do not declare `exact` merely because export and import use the same JSON extension or belong to the same product. Audit whether session identity/context, reasoning/private blocks, tool payloads, attachments, branches/subagents, unknown records and relevant metadata survive the round-trip.
+
+See [FIDELITY.md](FIDELITY.md).
 
 ## Adapter contract
 
@@ -67,6 +100,25 @@ export default {
 
 A lossless-capable adapter should expose `capabilities.losslessRead = true`.
 
+A writable target should describe the normalized features it can represent. This is used for actual-session fidelity checks and strict portable fallback:
+
+```js
+portableSupport = {
+  text: true,
+  toolCall: true,
+  toolResult: true,
+  reasoning: false,
+  system: true,
+  attachment: false,
+  subagent: false,
+  unknownContent: false,
+  rawEvent: false,
+  metadata: true
+};
+```
+
+Do not set a feature to `true` unless `writePortableSession()` really preserves it in the target representation.
+
 ## Lossless adapter requirements
 
 When `options.mode === "lossless"`, a reader should preserve as much source material as the local transcript actually contains: provider thinking/reasoning blocks, reasoning signatures or opaque encrypted fields, system/progress/status events, tool metadata/results, checkpoints/rewinds/compact records, unknown future records and reconstruction metadata.
@@ -76,6 +128,20 @@ Prefer preserving the original parsed record under `session.events[].data` rathe
 Normalized `reasoning` content is useful for adapters that understand it, but raw records remain the source of truth in lossless mode.
 
 Do not blindly rewrite one provider's reasoning object into another provider's reasoning field. Such data may be signed, encrypted or version-specific. A target should only perform a semantic reasoning import when it explicitly supports that source format.
+
+## Strict-lossless behavior
+
+`--strict-lossless` must never mutate a target through a route that ccbridge cannot prove complete.
+
+For a native route:
+
+1. `exact` is accepted.
+2. `remapped` or `best-effort` is not accepted as strict native preservation.
+3. If the target also has `writePortableSession()`, ccbridge evaluates the actual lossless source session against `portableSupport`.
+4. It switches to portable only if every observed feature is preserved.
+5. Otherwise it rejects before `importNativeArtifact()` or `writePortableSession()` runs.
+
+The `.ccbridge` side archive is independent from this decision. Preserving raw source bytes in an archive does not make the destination exact.
 
 ## External plugins
 
@@ -108,6 +174,8 @@ Plugins are executable JavaScript with the same user permissions as ccbridge. On
 ## Adding a built-in adapter
 
 Built-in adapters live under `packages/core/src/adapters/` and are registered by `createDefaultRegistry()`. Keep product-specific storage paths, JSON schemas and import behavior inside the adapter.
+
+Before promoting a built-in native format above `best-effort`, add source-backed evidence and fixture tests for the claimed preservation class.
 
 ## Platform support
 
