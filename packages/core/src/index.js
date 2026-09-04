@@ -17,6 +17,8 @@ export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport 
 export { diffCcbridgeArchives, diffPortableSessions } from "./diff.js";
 export { scanAdapter, scanRegistry } from "./scan.js";
 export { verifyCcbridgeArchive, verifyPortableTransfer } from "./verify.js";
+export { PRIVACY_REDACTION_MARKERS, sanitizeCcbridgeArchive, sanitizePortableSession } from "./privacy/sanitize.js";
+export { CCBRIDGE_ENCRYPTED_FORMAT, CCBRIDGE_ENCRYPTED_VERSION, decryptCcbridgeArchive, decryptCcbridgeEnvelope, encryptCcbridgeArchive, encryptCcbridgeBytes, readEncryptedCcbridgeArchive } from "./privacy/encryption.js";
 export { adapterAcceptsNativeArtifact, adapterCapabilities, nativeArtifactFormat, normalizeAdapterId, validateAdapter } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
 export { CodexAppServerClient } from "./codex/app-server-client.js";
