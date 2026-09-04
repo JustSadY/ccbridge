@@ -11,6 +11,7 @@ function operations(metadata) { return Array.isArray(metadata?.ccbridgeOperation
 function timestamp(value) { const parsed = value ? new Date(value).getTime() : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function earliest(...values) { const valid = values.map(timestamp).filter((value) => value !== null); return valid.length ? new Date(Math.min(...valid)).toISOString() : null; }
 function latest(...values) { const valid = values.map(timestamp).filter((value) => value !== null); return valid.length ? new Date(Math.max(...valid)).toISOString() : null; }
+function samePath(a, b) { return Boolean(a && b && path.resolve(String(a)) === path.resolve(String(b))); }
 function chronological(items) {
   return items.map((item, order) => ({ item, order, time: timestamp(item.createdAt ?? item.timestamp) }))
     .sort((a, b) => a.time === null && b.time === null ? a.order - b.order : a.time === null ? 1 : b.time === null ? -1 : a.time - b.time || a.order - b.order)
@@ -34,11 +35,16 @@ function namespaceAgents(agents, side, source) {
     }
   }));
 }
-function sourceArchiveExtra(input, side) {
+function sourceArchiveExtra(input, side, capturedBytes = null) {
   const filename = typeof input === "string" ? path.basename(input) : `${side}.ccbridge`;
   const entryPath = `provenance/sources/${side}-${safe(filename)}`;
+  if (capturedBytes) return { entryPath, bytes: capturedBytes, mediaType: "application/vnd.ccbridge+json" };
   if (typeof input === "string") return { entryPath, sourcePath: path.resolve(input), mediaType: "application/vnd.ccbridge+json" };
   return { entryPath, content: `${JSON.stringify(input, null, 2)}\n`, encoding: "utf8", mediaType: "application/vnd.ccbridge+json" };
+}
+async function captureArchiveBytes(input) {
+  if (typeof input === "string") return fs.readFile(path.resolve(input));
+  return Buffer.from(`${JSON.stringify(input, null, 2)}\n`, "utf8");
 }
 
 export function forkPortableSession(session, options = {}) {
@@ -106,6 +112,8 @@ export function mergePortableSessions(left, right, options = {}) {
 }
 
 export async function forkCcbridgeArchive(input, options = {}) {
+  if (typeof input === "string" && options.destination && samePath(input, options.destination)) throw new Error("Fork output must not overwrite the source archive");
+  const sourceBytes = await captureArchiveBytes(input);
   const loaded = await readCcbridgeArchive(input);
   const forked = forkPortableSession(loaded.session, options);
   const materialized = await materializeCcbridgeNative(loaded);
@@ -116,7 +124,7 @@ export async function forkCcbridgeArchive(input, options = {}) {
       mode: loaded.mode ?? "portable",
       nativeArtifact: materialized?.artifact ?? null,
       metadata: { operation: "fork", sourceArchiveVersion: loaded.version, source: loaded.source ?? null },
-      extraEntries: [sourceArchiveExtra(input, "parent")]
+      extraEntries: [sourceArchiveExtra(input, "parent", sourceBytes)]
     });
     return { ...written, operation: "fork", sessionId: forked.id, parentSessionId: loaded.session.id, provenanceEntries: 1 };
   } finally {
@@ -125,7 +133,14 @@ export async function forkCcbridgeArchive(input, options = {}) {
 }
 
 export async function mergeCcbridgeArchives(leftInput, rightInput, options = {}) {
-  const [left, right] = await Promise.all([readCcbridgeArchive(leftInput), readCcbridgeArchive(rightInput)]);
+  if (typeof leftInput === "string" && options.destination && samePath(leftInput, options.destination)) throw new Error("Merge output must not overwrite the left source archive");
+  if (typeof rightInput === "string" && options.destination && samePath(rightInput, options.destination)) throw new Error("Merge output must not overwrite the right source archive");
+  const [leftBytes, rightBytes, left, right] = await Promise.all([
+    captureArchiveBytes(leftInput),
+    captureArchiveBytes(rightInput),
+    readCcbridgeArchive(leftInput),
+    readCcbridgeArchive(rightInput)
+  ]);
   const merged = mergePortableSessions(left.session, right.session, options);
   const mode = left.mode === "lossless" || right.mode === "lossless" ? "lossless" : "portable";
   const written = await writeCcbridgeArchive(merged, {
@@ -133,7 +148,7 @@ export async function mergeCcbridgeArchives(leftInput, rightInput, options = {})
     from: "ccbridge",
     mode,
     metadata: { operation: "merge", sources: [left.source ?? sourceDescriptor(left.session), right.source ?? sourceDescriptor(right.session)] },
-    extraEntries: [sourceArchiveExtra(leftInput, "left"), sourceArchiveExtra(rightInput, "right")]
+    extraEntries: [sourceArchiveExtra(leftInput, "left", leftBytes), sourceArchiveExtra(rightInput, "right", rightBytes)]
   });
   return {
     ...written,
@@ -148,6 +163,7 @@ export async function mergeCcbridgeArchives(leftInput, rightInput, options = {})
 }
 
 export async function extractProvenanceArchive(archiveInput, entryPath, destination) {
+  if (typeof archiveInput === "string" && destination && samePath(archiveInput, destination)) throw new Error("Provenance extraction must not overwrite the containing archive");
   const archive = await readCcbridgeArchive(archiveInput);
   const entry = archive.entries?.find((item) => item.path === entryPath);
   if (!entry || !entryPath.startsWith("provenance/sources/")) throw new Error(`Provenance source entry not found: ${entryPath}`);
