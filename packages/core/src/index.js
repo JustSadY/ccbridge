@@ -31,7 +31,7 @@ export { GooseAdapter } from "./adapters/goose.js";
 export { PiAdapter } from "./adapters/pi.js";
 export { KiloCodeAdapter } from "./adapters/kilo.js";
 export { SessionBridge } from "./bridge.js";
-export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
+export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport, nativeImportPreservation, transferPreservationClass, NATIVE_PRESERVATION_CLASSES } from "./fidelity.js";
 export { analyzeStaticRoute, routeMatrix } from "./routes.js";
 export { BUILTIN_COMPATIBILITY_CONTRACTS, adapterCompatibilityContract, checkAdapterCompatibility, compatibilityReport } from "./compatibility.js";
 export { diffCcbridgeArchives, diffPortableSessions } from "./diff.js";
