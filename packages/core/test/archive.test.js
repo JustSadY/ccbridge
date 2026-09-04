@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { AdapterRegistry } from "../src/adapters/registry.js";
 import { SessionBridge } from "../src/bridge.js";
-import { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, materializeCcbridgeNative, readCcbridgeArchive, writeCcbridgeArchive } from "../src/lossless/archive.js";
+import { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, materializeCcbridgeAttachments, materializeCcbridgeNative, readCcbridgeArchive, writeCcbridgeArchive } from "../src/lossless/archive.js";
 
 function losslessSession() {
   return { schemaVersion: 1, id: "session-1", title: "Test", cwd: "/work", startedAt: null, updatedAt: null, source: { adapter: "source", sessionId: "session-1", path: null }, messages: [{ id: "u1", role: "user", content: [{ type: "text", text: "hello" }], metadata: {} }], metadata: {}, events: [{ index: 0, provider: "source", kind: "thinking", timestamp: null, data: { secretThinking: "keep me" } }], lossless: { enabled: true, sourceFormat: "vendor/session-jsonl", rawRecordCount: 1, includesProviderReasoning: true, includesUnknownEvents: false } };
@@ -24,20 +24,33 @@ test("writes and reads ccbridge v2 entries with embedded native bytes", async ()
   assert.equal(written.entryCount, 4);
   assert.equal(written.embeddedCompanionCount, 1);
   assert.ok(written.embeddedNativeBytes > 0);
-
   const stored = JSON.parse(await fs.readFile(out, "utf8"));
   assert.equal(stored.version, 2);
   assert.deepEqual(stored.manifest.entries.map((entry) => entry.path), ["portable/session.json", "raw/events.json", "native/session.jsonl", "native/session.jsonl-wal"]);
   assert.ok(stored.manifest.entries.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
-
   const loaded = await readCcbridgeArchive(out);
   assert.equal(loaded.session.events[0].data.secretThinking, "keep me");
   assert.equal(loaded.nativeArtifact.format, "vendor/session-jsonl");
   const materialized = await materializeCcbridgeNative(loaded);
-  try {
-    assert.equal(await fs.readFile(materialized.artifact.path, "utf8"), '{"type":"raw"}\n');
-    assert.equal(await fs.readFile(materialized.artifact.companions[0].path, "utf8"), "wal-bytes");
-  } finally { await materialized.cleanup(); }
+  try { assert.equal(await fs.readFile(materialized.artifact.path, "utf8"), '{"type":"raw"}\n'); assert.equal(await fs.readFile(materialized.artifact.companions[0].path, "utf8"), "wal-bytes"); }
+  finally { await materialized.cleanup(); }
+});
+
+test("embeds attachment bytes as verified archive entries", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-attachment-"));
+  const out = path.join(dir, "attachment.ccbridge");
+  const session = losslessSession();
+  session.messages[0].content.push({ type: "attachment", name: "note.txt", mimeType: "text/plain", data: Buffer.from("attachment body").toString("base64"), encoding: "base64" });
+  const written = await writeCcbridgeArchive(session, { destination: out, from: "source" });
+  assert.equal(written.embeddedAttachmentCount, 1);
+  assert.equal(written.skippedAttachmentCount, 0);
+  const loaded = await readCcbridgeArchive(out);
+  const attachment = loaded.session.messages[0].content[1];
+  assert.ok(attachment.archiveEntry.startsWith("attachments/"));
+  assert.equal(Buffer.from(attachment.data, attachment.encoding).toString("utf8"), "attachment body");
+  const materialized = await materializeCcbridgeAttachments(loaded);
+  try { assert.equal(materialized.count, 1); assert.equal(await fs.readFile(materialized.session.messages[0].content[1].path, "utf8"), "attachment body"); }
+  finally { await materialized.cleanup(); }
 });
 
 test("rejects corrupted ccbridge v2 entry content", async () => {

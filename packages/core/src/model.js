@@ -58,6 +58,22 @@ export function textContent(text) {
   return { type: "text", text: String(text) };
 }
 
+export function attachmentContent({ name = null, mimeType = "application/octet-stream", path = null, uri = null, data = null, encoding = null, size = null, sha256 = null, archiveEntry = null, metadata = null } = {}) {
+  return {
+    type: "attachment",
+    name: name ?? null,
+    mimeType: mimeType ?? "application/octet-stream",
+    path: path ?? null,
+    uri: uri ?? null,
+    data: typeof data === "string" ? data : null,
+    encoding: typeof data === "string" ? (encoding ?? "base64") : null,
+    size: Number.isFinite(size) ? size : null,
+    sha256: sha256 ?? null,
+    archiveEntry: archiveEntry ?? null,
+    metadata: metadata && typeof metadata === "object" ? metadata : {}
+  };
+}
+
 export function reasoningContent({ provider, text = null, summary = null, signature = null, encrypted = null, raw = null }) {
   return {
     type: "reasoning",

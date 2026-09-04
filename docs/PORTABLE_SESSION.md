@@ -1,6 +1,6 @@
 # PortableSession v1
 
-`PortableSession` is the provider-neutral interchange model used by ccbridge. Version 1 now supports two operating modes without changing the schema version: normal portable conversion and additive lossless preservation.
+`PortableSession` is the provider-neutral interchange model used by ccbridge. Version 1 supports portable conversion plus additive lossless preservation without changing the schema version.
 
 ## Session
 
@@ -24,18 +24,39 @@
 }
 ```
 
-Required fields remain:
-
-- `schemaVersion` — currently `1`.
-- `id` — portable session identifier.
-- `source.adapter` — canonical adapter id.
-- `messages` — ordered normalized message array.
-
-`events` and `lossless` are additive fields. Portable readers normally return `events: []` and `lossless: null`.
+Required fields remain `schemaVersion`, `id`, `source.adapter`, `messages` and `events`. Portable readers normally return `events: []` and `lossless: null`.
 
 ## Portable mode
 
-Portable mode is the default. It carries normalized user-visible context such as text, tool calls, tool results and safe adapter metadata. Provider-private thinking/reasoning is not exposed in portable mode.
+Portable mode carries normalized user-visible context such as text, attachments, tool calls, tool results and safe adapter metadata. Provider-private thinking/reasoning is not exposed in portable mode.
+
+### Text
+
+```js
+{ type: "text", text: "hello" }
+```
+
+### Attachment
+
+```js
+{
+  type: "attachment",
+  name: "screen.png",
+  mimeType: "image/png",
+  path: null,
+  uri: null,
+  data: "...",
+  encoding: "base64",
+  size: 1234,
+  sha256: "...",
+  archiveEntry: "attachments/0001-002-screen.png",
+  metadata: {}
+}
+```
+
+Adapters may provide attachment bytes inline (`data`), through a readable local `path`, or only as a `uri` reference. ccbridge does not fetch arbitrary remote URLs during archive creation.
+
+When a `.ccbridge` v2 archive is written, readable attachment bytes are stored as dedicated `attachments/...` entries. The serialized `portable/session.json` references those entries instead of duplicating the inline payload. On archive read, verified bytes are reattached to the in-memory portable attachment so a target writer can import them. `materializeCcbridgeAttachments()` can additionally create temporary private files for targets that require paths.
 
 ## Lossless mode
 
@@ -69,9 +90,7 @@ and populate `events` with source-native records in original order.
   provider: "example-agent",
   kind: "progress",
   timestamp: "2026-09-04T07:02:00.000Z",
-  data: {
-    // original parsed provider record, unchanged
-  }
+  data: {}
 }
 ```
 
@@ -93,37 +112,20 @@ Reasoning entries are emitted only in lossless mode:
 }
 ```
 
-The fields intentionally accommodate different provider formats. Some products expose plaintext thinking, others summaries, signatures, encrypted/opaque content or only structured reasoning records.
-
-A target adapter must not assume that a source provider's reasoning object can be inserted into the target provider's reasoning field. Signed/encrypted/provider-validated data should be treated as preserved historical data unless the target explicitly documents compatible import semantics.
+A target adapter must not assume that a source provider's reasoning object can be inserted into the target provider's reasoning field. Signed, encrypted or provider-validated data should be treated as preserved historical data unless the target explicitly documents compatible import semantics.
 
 ## Tool history
 
-Tool calls and tool results remain historical context. Importing a transferred session must not automatically re-execute the original command or tool.
+Tool calls and tool results are historical context. Importing a transferred session must not automatically re-execute the original command or tool.
 
-## Lossless bundle
+## Lossless archive
 
-When a transfer is run with `mode: "lossless"`, ccbridge writes a sidecar bundle after the target transfer succeeds:
+Lossless transfers use the universal versioned `.ccbridge` archive. The archive keeps the normalized session, raw events, readable attachments and optional source-native artifacts as independent integrity-checked entries. See [ARCHIVE.md](ARCHIVE.md).
 
-```js
-{
-  format: "ccbridge/lossless-session",
-  version: 1,
-  createdAt: "...",
-  from: "claude-code",
-  to: "codex",
-  session: {
-    // complete lossless PortableSession
-  }
-}
-```
-
-The default path is under `~/.ccbridge/lossless/`; `CCBRIDGE_HOME` or the CLI `--bundle` option can override it.
-
-Lossless bundles may include prompts, private provider reasoning, tool output, file content, system events, signatures, local paths and opaque product metadata. Treat them as sensitive files.
+Lossless archives may include prompts, private provider reasoning, tool output, file content, system events, signatures, local paths and opaque product metadata. Treat them as sensitive files.
 
 ## Native routes vs portable routes
 
-The bridge still prefers a compatible native route when available. In lossless mode it also reads the complete source representation and creates a bundle, because a native target importer may legitimately discard source-private fields it cannot represent.
+The bridge prefers a compatible native route when available. In lossless mode it also reads the complete source representation and creates a `.ccbridge` archive because a native target importer may legitimately discard source-private fields it cannot represent.
 
-This gives two independent guarantees: the target receives the best import route it supports, and the original source data remains preserved for later replay, conversion or a future adapter with richer capabilities.
+This gives two independent preservation layers: the target receives the best route it supports, while source data remains available for later replay, conversion or a future richer adapter.
