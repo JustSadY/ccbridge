@@ -44,6 +44,18 @@ test("routes command reports Qwen portable target plus lossless side archive", a
   assert.equal(output.rows[0].lossless.preservation.overallClass, "portable+side-archive");
 });
 
+test("compatibility command exposes Qwen contract without a session probe", async () => {
+  const result = await run(["compatibility", "qwen", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.adapterCount, 1);
+  assert.equal(output.adapters[0].id, "qwen-code");
+  assert.equal(output.adapters[0].status, "contract-available");
+  assert.deepEqual(output.adapters[0].contract.sourceFormats, ["qwen-code/session-jsonl"]);
+  assert.equal(output.adapters[0].contract.treeStructured, true);
+  assert.equal(output.adapters[0].contract.compressionAware, true);
+});
+
 test("routes command human output exposes target and side-archive preservation", async () => {
   const result = await run(["routes", "pi", "goose"]);
   assert.equal(result.status, 0, result.stderr);
