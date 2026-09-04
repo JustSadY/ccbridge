@@ -15,6 +15,7 @@ export { AntigravityCliAdapter } from "./adapters/antigravity.js";
 export { SessionBridge } from "./bridge.js";
 export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
 export { diffCcbridgeArchives, diffPortableSessions } from "./diff.js";
+export { scanAdapter, scanRegistry } from "./scan.js";
 export { verifyCcbridgeArchive, verifyPortableTransfer } from "./verify.js";
 export { adapterAcceptsNativeArtifact, adapterCapabilities, nativeArtifactFormat, normalizeAdapterId, validateAdapter } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
