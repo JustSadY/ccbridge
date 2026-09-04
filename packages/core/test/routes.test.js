@@ -34,7 +34,7 @@ test("route matrix distinguishes lossless side archives from strict native guara
   assert.equal(piGoose.route, "native");
   assert.deepEqual(piGoose.nativeFormats, ["pi/session-jsonl"]);
   assert.equal(piGoose.lossless.route, "native+archive");
-  assert.equal(piGoose.lossless.strict, "session-dependent");
+  assert.equal(piGoose.lossless.strict, "unavailable");
   assert.deepEqual(piGoose.lossless.strictNativeFormats, []);
 
   const kiloSelf = row(matrix, "kilo-code", "kilo-code");
