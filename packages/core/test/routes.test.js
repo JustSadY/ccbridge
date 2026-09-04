@@ -28,17 +28,18 @@ test("static route matrix describes native and portable priorities without readi
   assert.equal(antigravityOpenCode.preservation.targetClass, "none");
 });
 
-test("route matrix distinguishes exact, remapped and side-archive guarantees", () => {
+test("route matrix distinguishes remapped, best-effort and side-archive guarantees", () => {
   const bridge = createDefaultBridge();
   const matrix = bridge.routes();
 
   const gooseSelf = row(matrix, "goose", "goose");
   assert.equal(gooseSelf.route, "native");
   assert.deepEqual(gooseSelf.nativeFormats, ["goose/session-json"]);
-  assert.equal(gooseSelf.nativePreservation["goose/session-json"], "exact");
-  assert.equal(gooseSelf.preservation.targetClass, "exact");
-  assert.deepEqual(gooseSelf.lossless.strictNativeFormats, ["goose/session-json"]);
-  assert.equal(gooseSelf.lossless.strict, "native-for-listed-formats");
+  assert.equal(gooseSelf.nativePreservation["goose/session-json"], "remapped");
+  assert.equal(gooseSelf.preservation.targetClass, "remapped");
+  assert.deepEqual(gooseSelf.lossless.strictNativeFormats, []);
+  assert.equal(gooseSelf.lossless.strict, "unavailable");
+  assert.equal(gooseSelf.lossless.preservation.overallClass, "remapped+side-archive");
 
   const piGoose = row(matrix, "pi", "goose");
   assert.equal(piGoose.route, "native");
@@ -48,6 +49,12 @@ test("route matrix distinguishes exact, remapped and side-archive guarantees", (
   assert.equal(piGoose.lossless.preservation.overallClass, "best-effort+side-archive");
   assert.equal(piGoose.lossless.strict, "unavailable");
   assert.deepEqual(piGoose.lossless.strictNativeFormats, []);
+
+  const opencodeSelf = row(matrix, "opencode", "opencode");
+  assert.equal(opencodeSelf.route, "native");
+  assert.equal(opencodeSelf.nativePreservation["opencode/session-json"], "remapped");
+  assert.equal(opencodeSelf.lossless.strict, "session-dependent");
+  assert.deepEqual(opencodeSelf.lossless.strictNativeFormats, []);
 
   const kiloSelf = row(matrix, "kilo-code", "kilo-code");
   assert.equal(kiloSelf.route, "native");
@@ -63,6 +70,12 @@ test("route matrix distinguishes exact, remapped and side-archive guarantees", (
   assert.deepEqual(opencodeKilo.nativeFormats, ["opencode/session-json"]);
   assert.equal(opencodeKilo.nativePreservation["opencode/session-json"], "remapped");
   assert.equal(opencodeKilo.lossless.strict, "session-dependent");
+});
+
+test("built-in registry makes no exact native claim without an audited guarantee", () => {
+  const matrix = createDefaultBridge().routes();
+  const exactClaims = matrix.rows.flatMap((route) => Object.entries(route.nativePreservation ?? {}).filter(([, value]) => value === "exact").map(([format]) => `${route.from}->${route.to}:${format}`));
+  assert.deepEqual(exactClaims, []);
 });
 
 test("route matrix filters by aliases and canonicalizes adapter ids", () => {
