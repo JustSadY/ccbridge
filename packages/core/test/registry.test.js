@@ -4,7 +4,7 @@ import { AdapterRegistry } from "../src/adapters/registry.js";
 
 test("adapter registry resolves aliases", () => {
   const registry = new AdapterRegistry();
-  const adapter = { id: "example", aliases: ["ex"] };
+  const adapter = { id: "example", name: "Example", aliases: ["ex"] };
   registry.register(adapter);
   assert.equal(registry.get("example"), adapter);
   assert.equal(registry.get("ex"), adapter);
@@ -12,6 +12,18 @@ test("adapter registry resolves aliases", () => {
 
 test("adapter registry rejects duplicate aliases", () => {
   const registry = new AdapterRegistry();
-  registry.register({ id: "a", aliases: ["same"] });
-  assert.throws(() => registry.register({ id: "b", aliases: ["same"] }), /already registered/);
+  registry.register({ id: "a", name: "A", aliases: ["same"] });
+  assert.throws(() => registry.register({ id: "b", name: "B", aliases: ["same"] }), /already registered/);
+});
+
+test("adapter registry derives capabilities from implemented methods", () => {
+  const registry = new AdapterRegistry();
+  const adapter = {
+    id: "reader",
+    name: "Reader",
+    async readSession() {}
+  };
+  registry.register(adapter);
+  assert.equal(adapter.capabilities.read, true);
+  assert.equal(adapter.capabilities.write, false);
 });
