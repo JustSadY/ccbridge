@@ -157,6 +157,19 @@ Lossless archives may include prompts, private provider reasoning, tool output, 
 
 ## Native routes vs portable routes
 
-The bridge prefers a compatible native route when available. In lossless mode it also reads the complete source representation and creates a `.ccbridge` archive because a native target importer may legitimately discard source-private fields it cannot represent.
+The bridge prefers a compatible native route for normal transfers because the provider's own importer usually understands more native structure than a generic conversion. Native compatibility alone does **not** mean exact preservation.
 
-This gives two independent preservation layers: the target receives the best route it supports, while source data remains available for later replay, conversion or a future richer adapter.
+ccbridge classifies the target representation separately:
+
+- `exact` — an audited native importer preserves semantically relevant session state without a target-side rewrite.
+- `remapped` — native message/conversation data is retained while target-owned identity/context is recreated or changed.
+- `best-effort` — the native importer accepts the format but ccbridge cannot prove a bounded or exact round-trip.
+- `portable` — the destination is written from `PortableSession` and fidelity is evaluated feature by feature.
+
+In lossless mode a second, independent dimension records whether a `.ccbridge` side archive is written. Thus `remapped+side-archive` means the destination session is remapped while the complete available source representation remains archived. It does not mean the destination became exact.
+
+`--strict-lossless` only mutates a destination through a provably complete target representation. An audited `exact` native route is accepted directly. If the preferred native route is `remapped` or `best-effort`, ccbridge can evaluate a portable fallback against the actual lossless session; it uses that fallback only when every observed feature is representable. Otherwise strict mode blocks before mutation.
+
+This gives two independent preservation layers: the target receives the safest representation it can prove, while source data remains available for later replay, conversion or a future richer adapter.
+
+See [FIDELITY.md](FIDELITY.md) for the complete preservation contract.
