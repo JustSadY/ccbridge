@@ -1,5 +1,15 @@
 #!/usr/bin/env node
-import { createBridgeWithPlugins, detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, defaultAntigravityCliHome } from "@ccbridge/core";
+import {
+  createBridgeWithPlugins,
+  detectRuntime,
+  defaultClaudeHome,
+  defaultCodexHome,
+  defaultGeminiHome,
+  defaultAntigravityCliHome,
+  extractProvenanceArchive,
+  forkCcbridgeArchive,
+  mergeCcbridgeArchives
+} from "@ccbridge/core";
 const rawArgs = process.argv.slice(2);
 function repeatedValues(argv, name) { const values = []; for (let i = 0; i < argv.length; i += 1) { if (argv[i] === name && argv[i + 1]) { values.push(argv[i + 1]); i += 1; } } return values; }
 function withoutOptionPairs(argv, names) { const output = []; for (let i = 0; i < argv.length; i += 1) { if (names.includes(argv[i])) { i += 1; continue; } output.push(argv[i]); } return output; }
@@ -9,7 +19,7 @@ function positional() { const values = []; const booleanOptions = ["--json", "--
 function print(value) { if (has("--json")) console.log(JSON.stringify(value, null, 2)); else if (typeof value === "string") console.log(value); else console.log(JSON.stringify(value, null, 2)); }
 function requestedMode(defaultMode = "portable") { return has("--all") || has("--strict-lossless") ? "lossless" : valueOf("--mode") ?? defaultMode; }
 function cwdRouteOptions() { return { cwd: valueOf("--cwd"), cwdMappings: repeatedValues(args, "--map-cwd"), targetProfile: valueOf("--target-profile") ?? "native" }; }
-function usage() { console.log(`ccbridge - local coding-agent session bridge\n\nUsage:\n  ccbridge fidelity <from> <to> <session> [--all] [--map-cwd FROM=TO] [--target-profile PROFILE]\n  ccbridge transfer <from> <to> <session> [--all] [--strict-lossless] [--dry-run] [--map-cwd FROM=TO] [--target-profile PROFILE]\n  ccbridge export <adapter> <session> [--output PATH] [--all]\n  ccbridge import <archive.ccbridge> <target-adapter> [--cwd PATH] [--map-cwd FROM=TO] [--target-profile PROFILE] [--dry-run]\n\nCross-platform cwd mapping:\n  --map-cwd FROM=TO        repeatable prefix mapping; explicit mappings win\n  --target-profile native|windows|wsl|linux\n                           windows<->WSL drive paths are converted automatically\n\nStrict mode:\n  --strict-lossless blocks the transfer before target writes if any known source feature cannot be represented directly.\n\nExamples:\n  ccbridge transfer claude codex <session> --target-profile wsl --dry-run\n  ccbridge transfer claude opencode <session> --map-cwd 'C:\\Users\\me\\Projects=/home/me/projects'\n  ccbridge import ./session.ccbridge opencode --target-profile windows\n`); }
+function usage() { console.log(`ccbridge - local coding-agent session bridge\n\nUsage:\n  ccbridge fidelity <from> <to> <session> [--all] [--map-cwd FROM=TO] [--target-profile PROFILE]\n  ccbridge transfer <from> <to> <session> [--all] [--strict-lossless] [--dry-run] [--map-cwd FROM=TO] [--target-profile PROFILE]\n  ccbridge export <adapter> <session> [--output PATH] [--all]\n  ccbridge import <archive.ccbridge> <target-adapter> [--cwd PATH] [--map-cwd FROM=TO] [--target-profile PROFILE] [--dry-run]\n  ccbridge fork <archive.ccbridge> [--output PATH] [--id ID] [--title TITLE]\n  ccbridge merge <left.ccbridge> <right.ccbridge> [--output PATH] [--id ID] [--title TITLE] [--cwd PATH]\n  ccbridge extract-provenance <archive.ccbridge> <entry> [--output PATH]\n\nFork / merge:\n  fork creates a new universal session while embedding the complete parent archive as provenance.\n  merge keeps both branches without deduplication and embeds both complete source archives.\n\nCross-platform cwd mapping:\n  --map-cwd FROM=TO        repeatable prefix mapping; explicit mappings win\n  --target-profile native|windows|wsl|linux\n                           windows<->WSL drive paths are converted automatically\n\nStrict mode:\n  --strict-lossless blocks the transfer before target writes if any known source feature cannot be represented directly.\n\nExamples:\n  ccbridge fork ./session.ccbridge --output ./fork.ccbridge\n  ccbridge merge ./branch-a.ccbridge ./branch-b.ccbridge --output ./merged.ccbridge\n  ccbridge transfer claude codex <session> --target-profile wsl --dry-run\n`); }
 function transferArgs() { const [from, to, session] = positional(); if (!from || !to || !session) throw new Error("Usage: ccbridge <command> <from> <to> <session> [--cwd PATH]"); return { from, to, session, ...cwdRouteOptions(), mode: requestedMode(), bundle: valueOf("--bundle") }; }
 try {
   if (command === "help" || command === "--help" || command === "-h") usage();
@@ -20,6 +30,9 @@ try {
   else if (command === "fidelity") print(await bridge.fidelity(transferArgs()));
   else if (command === "export") { const [from, session] = positional(); if (!from || !session) throw new Error("Usage: ccbridge export <adapter> <session> [--output PATH]"); print(await bridge.exportSession({ from, session, destination: valueOf("--output"), mode: requestedMode("lossless") })); }
   else if (command === "import") { const [archive, to] = positional(); if (!archive || !to) throw new Error("Usage: ccbridge import <archive.ccbridge> <target-adapter> [--cwd PATH]"); print(await bridge.importArchive({ archive, to, ...cwdRouteOptions(), dryRun: has("--dry-run") })); }
+  else if (command === "fork") { const [archive] = positional(); if (!archive) throw new Error("Usage: ccbridge fork <archive.ccbridge> [--output PATH]"); print(await forkCcbridgeArchive(archive, { destination: valueOf("--output"), id: valueOf("--id"), title: valueOf("--title") })); }
+  else if (command === "merge") { const [left, right] = positional(); if (!left || !right) throw new Error("Usage: ccbridge merge <left.ccbridge> <right.ccbridge> [--output PATH]"); print(await mergeCcbridgeArchives(left, right, { destination: valueOf("--output"), id: valueOf("--id"), title: valueOf("--title"), cwd: valueOf("--cwd") })); }
+  else if (command === "extract-provenance") { const [archive, entry] = positional(); if (!archive || !entry) throw new Error("Usage: ccbridge extract-provenance <archive.ccbridge> <entry> [--output PATH]"); print(await extractProvenanceArchive(archive, entry, valueOf("--output"))); }
   else if (command === "plan") print(await bridge.planTransfer(transferArgs()));
   else if (command === "transfer") print(await bridge.transfer({ ...transferArgs(), dryRun: has("--dry-run"), strictLossless: has("--strict-lossless") }));
   else throw new Error(`Unknown command: ${command}`);
