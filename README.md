@@ -32,6 +32,14 @@ npm test
 npm link --workspace @ccbridge/cli
 ```
 
+## Interactive mode
+
+```bash
+ccbridge ui
+```
+
+The dependency-free terminal flow scans local sessions, lets you choose source agent, session, target agent and transfer mode, prints the actual route plan, then requires explicit confirmation before target mutation. Lossless mode is presented first so raw/thinking data can be preserved in a `.ccbridge` side archive.
+
 ## Automatic discovery
 
 Scan every built-in and loaded plugin adapter:
@@ -62,6 +70,32 @@ ccbridge import ./session.ccbridge codex --cwd /path/to/project --dry-run
 ```
 
 `.ccbridge` v2 uses a manifest with integrity-checked entries for portable session data, raw events, native artifacts, companion files, attachments and provenance archives. Every entry records byte size and SHA-256. Older v1 archives remain readable.
+
+## Privacy and encrypted archives
+
+Lossless archives may contain credentials, file contents, environment data, raw tool output and provider-private reasoning. Create a shareable sanitized copy instead of editing the original:
+
+```bash
+ccbridge sanitize session.ccbridge \
+  --output share.ccbridge \
+  --redact-secrets \
+  --exclude-env \
+  --exclude-files
+```
+
+Sanitize never overwrites its source. When any privacy transform is requested, embedded native artifacts and provenance source archives are intentionally omitted because ccbridge cannot guarantee redaction inside arbitrary private DB/JSONL payloads. Native-only sessions such as the current Antigravity adapter are rejected instead of producing misleading empty sanitized archives.
+
+Encrypt an archive with AES-256-GCM and a scrypt-derived key:
+
+```bash
+CCBRIDGE_PASSPHRASE='use-a-long-secret' \
+  ccbridge encrypt share.ccbridge --output share.ccbridge.enc
+
+CCBRIDGE_PASSPHRASE='use-a-long-secret' \
+  ccbridge decrypt share.ccbridge.enc --output restored.ccbridge
+```
+
+For scripts, a private passphrase file can be used with `--passphrase-file`. Plaintext `--passphrase` arguments are intentionally unsupported so secrets do not land in shell history. Encrypted envelopes expose only cipher/KDF parameters and ciphertext, not session metadata.
 
 ## Attachments and media
 
@@ -170,7 +204,7 @@ Antigravity CLI:  ~/.gemini/antigravity-cli/conversations/*.db
 ccbridge:         ~/.ccbridge/archives/*.ccbridge
 ```
 
-Environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `CCBRIDGE_ANTIGRAVITY_HOME`, and `CCBRIDGE_HOME`.
+Environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `CCBRIDGE_ANTIGRAVITY_HOME`, `CCBRIDGE_HOME`, and `CCBRIDGE_PASSPHRASE`.
 
 ## Safety
 
