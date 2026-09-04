@@ -40,7 +40,8 @@ export class CodexAdapter {
     this.id = "codex";
     this.name = "OpenAI Codex";
     this.aliases = ["openai-codex"];
-    this.capabilities = { discover: true, read: true, write: true, nativeImport: true };
+    this.capabilities = { discover: true, read: true, write: false, nativeExport: false, nativeImport: true };
+    this.nativeImports = ["claude-code/session-jsonl"];
     this.home = options.home ?? defaultCodexHome(options);
     this.command = options.command ?? "codex";
     this.clientFactory = options.clientFactory ?? ((clientOptions) => new CodexAppServerClient(clientOptions));
@@ -133,9 +134,13 @@ export class CodexAdapter {
     });
   }
 
+  async acceptsNativeArtifact(artifact) {
+    return artifact?.format === "claude-code/session-jsonl" && Boolean(artifact.path);
+  }
+
   async importNativeArtifact(artifact, options = {}) {
-    if (artifact?.kind !== "external-agent-session") {
-      throw new Error(`Codex cannot natively import artifact kind: ${artifact?.kind ?? "unknown"}`);
+    if (!await this.acceptsNativeArtifact(artifact)) {
+      throw new Error(`Codex cannot natively import artifact format: ${artifact?.format ?? artifact?.kind ?? "unknown"}`);
     }
 
     const cwd = options.cwd ?? artifact.cwd;
@@ -170,10 +175,6 @@ export class CodexAdapter {
     } finally {
       await client.close();
     }
-  }
-
-  async writePortableSession() {
-    throw new Error("Portable-session writes to Codex are not implemented yet; use a target-native import route when available");
   }
 
   async resolveSession(sessionRef) {
