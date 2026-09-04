@@ -126,7 +126,10 @@ test("Qwen fork subagent portable history matches resume bootstrap semantics", a
   assert.deepEqual(text, ["bootstrap user", "bootstrap answer", "Begin fork task.", "runtime answer"]);
   assert.equal(JSON.stringify(agent.messages).includes("visible launch seed"), false);
   assert.equal(JSON.stringify(agent.messages).includes("bootstrap private"), false);
+  assert.equal(agent.messages[0].parentId, null);
+  for (let index = 1; index < agent.messages.length; index += 1) assert.equal(agent.messages[index].parentId, agent.messages[index - 1].id);
   const runtime = agent.messages.at(-1);
+  assert.equal(runtime.metadata.qwenOriginalParentId, "launch-prompt");
   assert.equal(runtime.metadata.qwenRecord.agentRunId, "run-7");
   assert.equal(runtime.metadata.qwenRecord.agentRound, 2);
   assert.equal(runtime.metadata.qwenRecord.agentColor, "blue");
