@@ -81,14 +81,29 @@ Do not blindly rewrite one provider's reasoning object into another provider's r
 
 Adapters do not have to live in this repository. The core loader accepts package names, absolute paths, relative paths and file URLs. Supported module exports include a default adapter, `adapter`, an `adapters` array, or a `createAdapter(options)` factory.
 
-Load from the CLI:
+One-off loading remains available:
 
 ```bash
 ccbridge adapters --plugin @example/ccbridge-opencode
 ccbridge list opencode --plugin @example/ccbridge-opencode
+CCBRIDGE_PLUGINS=@example/a,./local-adapter.js ccbridge scan
 ```
 
-Multiple plugins can be supplied with repeated `--plugin` flags or `CCBRIDGE_PLUGINS`.
+For normal use, plugins can be persisted under `~/.ccbridge/plugins.json` (or `CCBRIDGE_HOME/plugins.json`):
+
+```bash
+ccbridge plugins add @example/ccbridge-cursor
+ccbridge plugins list
+ccbridge plugins disable @example/ccbridge-cursor
+ccbridge plugins enable @example/ccbridge-cursor
+ccbridge plugins remove @example/ccbridge-cursor
+```
+
+`plugins add` and `plugins enable` first load the module against the built-in registry so malformed adapters and id/alias collisions are rejected before the configuration is changed. Plugin management commands intentionally do not auto-load configured plugins, which means a broken plugin can still be disabled or removed.
+
+ccbridge never invokes npm, pnpm, yarn, Bun or another package manager from `plugins add`. Install the package yourself in the same Node environment as ccbridge, then register its module name. Local relative plugin paths are normalized to absolute paths when persisted.
+
+Plugins are executable JavaScript with the same user permissions as ccbridge. Only configure modules you trust.
 
 ## Adding a built-in adapter
 
