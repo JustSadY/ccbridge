@@ -5,6 +5,7 @@ const FEATURE_LABELS = {
   reasoning: "provider reasoning/thinking",
   system: "system messages",
   attachment: "attachments/files",
+  subagent: "subagent / agent-tree history",
   unknownContent: "unknown content blocks",
   rawEvent: "raw provider events",
   metadata: "session metadata"
@@ -23,6 +24,7 @@ export function analyzeSessionFeatures(session) {
       else counts.unknownContent += 1;
     }
   }
+  counts.subagent = session?.agents?.length ?? 0;
   counts.rawEvent = session?.events?.length ?? 0;
   counts.metadata = session?.metadata && Object.keys(session.metadata).length ? 1 : 0;
   return counts;
@@ -41,23 +43,10 @@ export function evaluatePortableFidelity(session, target, options = {}) {
     total += count;
     const supported = support[feature] === true;
     if (supported) direct += count;
-    features.push({
-      feature,
-      label: FEATURE_LABELS[feature] ?? feature,
-      count,
-      target: supported ? "preserved" : "not-represented",
-      archive: supported ? "also-preserved" : losslessArchive ? "bundle-only" : "not-preserved"
-    });
+    features.push({ feature, label: FEATURE_LABELS[feature] ?? feature, count, target: supported ? "preserved" : "not-represented", archive: supported ? "also-preserved" : losslessArchive ? "bundle-only" : "not-preserved" });
   }
 
-  return {
-    directItems: direct,
-    totalItems: total,
-    targetPercent: total ? Math.round((direct / total) * 100) : 100,
-    archivePercent: losslessArchive ? 100 : null,
-    features,
-    targetSupport: support
-  };
+  return { directItems: direct, totalItems: total, targetPercent: total ? Math.round((direct / total) * 100) : 100, archivePercent: losslessArchive ? 100 : null, features, targetSupport: support };
 }
 
 export function nativeFidelityReport(session, artifact, options = {}) {
