@@ -60,7 +60,8 @@ export class GooseAdapter {
     this.capabilities = { discover: true, read: true, write: false, nativeExport: true, nativeImport: true, losslessRead: true };
     this.nativeExports = ["goose/session-json"];
     this.nativeImports = ["goose/session-json", "claude-code/session-jsonl", "codex/rollout-jsonl", "pi/session-jsonl"];
-    this.losslessNativeImports = ["goose/session-json"];
+    this.losslessNativeImports = [];
+    this.nativeImportPreservation = { "goose/session-json": "remapped" };
     this.command = options.command ?? "goose"; this.runner = options.runner ?? spawnSync; this.exportRoots = defaultExportRoots(options);
   }
   #run(args) {
@@ -120,7 +121,7 @@ export class GooseAdapter {
     }
     try {
       const stdout = this.#run(["session", "import", file]); const match = stdout.match(/Session imported:\s*[\r\n]+([^\s]+)\s*-\s*(.*)/i);
-      return { imported: true, sourceFormat: artifact.format, sourceSessionId: artifact.sessionId ?? null, targetSessionId: match?.[1] ?? null, targetName: match?.[2]?.trim() ?? null, output: stdout.trim() };
+      return { imported: true, sourceFormat: artifact.format, sourceSessionId: artifact.sessionId ?? null, targetSessionId: match?.[1] ?? null, targetName: match?.[2]?.trim() ?? null, preservation: this.nativeImportPreservation[artifact.format] ?? "best-effort", output: stdout.trim() };
     } finally { if (temporary) await fs.rm(temporary, { force: true }); }
   }
 }
