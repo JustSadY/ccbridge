@@ -1,3 +1,5 @@
+import { adapterAcceptsNativeArtifact, nativeArtifactFormat } from "./adapters/contract.js";
+
 export class SessionBridge {
   constructor(registry) {
     this.registry = registry;
@@ -8,7 +10,8 @@ export class SessionBridge {
       id: adapter.id,
       name: adapter.name,
       aliases: adapter.aliases ?? [],
-      capabilities: adapter.capabilities ?? {}
+      capabilities: adapter.capabilities ?? {},
+      nativeImports: adapter.nativeImports ?? adapter.nativeFormats ?? []
     }));
   }
 
@@ -42,34 +45,73 @@ export class SessionBridge {
     return adapter.readSession(sessionRef);
   }
 
-  async transfer({ from, to, session, cwd, dryRun = false }) {
+  async planTransfer({ from, to, session, cwd }) {
     const source = this.registry.get(from);
     const target = this.registry.get(to);
 
     if (typeof source.getNativeArtifact === "function" && typeof target.importNativeArtifact === "function") {
       const artifact = await source.getNativeArtifact(session);
-      return target.importNativeArtifact(artifact, { cwd, dryRun });
+      if (await adapterAcceptsNativeArtifact(target, artifact)) {
+        return {
+          route: "native",
+          from: source.id,
+          to: target.id,
+          session,
+          cwd: cwd ?? artifact.cwd ?? null,
+          artifact,
+          format: nativeArtifactFormat(artifact)
+        };
+      }
     }
 
-    if (typeof source.readSession !== "function") {
-      throw new Error(`${source.id} cannot read portable sessions`);
-    }
-    if (typeof target.writePortableSession !== "function") {
-      throw new Error(`${target.id} cannot write portable sessions and no native route exists from ${source.id}`);
-    }
-
-    const portable = await source.readSession(session);
-    if (dryRun) {
+    if (typeof source.readSession === "function" && typeof target.writePortableSession === "function") {
+      const portable = await source.readSession(session);
       return {
-        dryRun: true,
         route: "portable",
         from: source.id,
         to: target.id,
+        session,
+        cwd: cwd ?? portable.cwd ?? null,
+        portable,
         sessionId: portable.id,
-        messageCount: portable.messages.length,
-        cwd: cwd ?? portable.cwd
+        messageCount: portable.messages.length
       };
     }
-    return target.writePortableSession(portable, { cwd });
+
+    throw new Error(`No compatible transfer route from ${source.id} to ${target.id}`);
+  }
+
+  async transfer({ from, to, session, cwd, dryRun = false }) {
+    const target = this.registry.get(to);
+    const plan = await this.planTransfer({ from, to, session, cwd });
+
+    if (dryRun) {
+      if (plan.route === "native") {
+        return {
+          dryRun: true,
+          route: plan.route,
+          from: plan.from,
+          to: plan.to,
+          session: plan.session,
+          cwd: plan.cwd,
+          format: plan.format,
+          artifact: plan.artifact
+        };
+      }
+      return {
+        dryRun: true,
+        route: plan.route,
+        from: plan.from,
+        to: plan.to,
+        sessionId: plan.sessionId,
+        messageCount: plan.messageCount,
+        cwd: plan.cwd
+      };
+    }
+
+    if (plan.route === "native") {
+      return target.importNativeArtifact(plan.artifact, { cwd: plan.cwd });
+    }
+    return target.writePortableSession(plan.portable, { cwd: plan.cwd });
   }
 }
