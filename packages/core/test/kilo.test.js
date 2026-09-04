@@ -88,16 +88,19 @@ test("Kilo legacy backend reuses Roo-compatible task files without mislabeling p
   assert.deepEqual(artifact.companions.map((item) => item.filename).sort(), ["task_metadata.json", "ui_messages.json"]);
 });
 
-test("Kilo current native route uses Kilo format and accepts OpenCode-compatible exports", async () => {
+test("Kilo current native route is remapped because target project/path identity changes", async () => {
   importedPayload = null;
   const adapter = new KiloCodeAdapter({ runner: mockRunner, legacyHomes: [noLegacyHome] });
   const artifact = await adapter.getNativeArtifact("current:kilo-current");
   assert.equal(artifact.format, "kilo/session-json");
   assert.equal(artifact.sourceAdapter, "kilo-code");
   assert.equal(await adapter.acceptsNativeArtifact({ format: "opencode/session-json", content: artifact.content }), true);
-  assert.deepEqual(adapter.losslessNativeImports, ["kilo/session-json"]);
+  assert.deepEqual(adapter.losslessNativeImports, []);
+  assert.equal(adapter.nativeImportPreservation["kilo/session-json"], "remapped");
+  assert.equal(adapter.nativeImportPreservation["opencode/session-json"], "remapped");
   const result = await adapter.importNativeArtifact(artifact, { cwd: "/work/current" });
   assert.equal(result.target, "kilo-code");
   assert.equal(result.sourceFormat, "kilo/session-json");
+  assert.equal(result.preservation, "remapped");
   assert.equal(result.sessionId, "kilo-current");
 });
