@@ -5,176 +5,61 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createPortableSession, rawEvent, reasoningContent, textContent, toolCallContent, toolResultContent } from "../model.js";
 
-function iso(value) {
-  if (value === undefined || value === null) return null;
-  const date = new Date(typeof value === "number" ? value : String(value));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
+function iso(value) { if (value === undefined || value === null) return null; const date = new Date(typeof value === "number" ? value : String(value)); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
 function epoch(value, fallback = Date.now()) { const parsed = value ? new Date(value).getTime() : NaN; return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback; }
 function id(prefix) { return `${prefix}_${randomUUID().replaceAll("-", "")}`; }
 function outputString(value) { if (typeof value === "string") return value; try { return JSON.stringify(value); } catch { return String(value); } }
 function inputObject(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : { value: value ?? null }; }
 function runError(command, args, result) { const detail = String(result?.stderr || result?.stdout || result?.error?.message || "unknown error").trim(); return new Error(`${command} ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`); }
-function providerFor(session) {
-  const adapter = session.source?.adapter;
-  if (adapter === "claude-code") return { providerID: "anthropic", modelID: "imported-claude" };
-  if (adapter === "codex") return { providerID: "openai", modelID: "imported-codex" };
-  if (adapter === "gemini-cli") return { providerID: "google", modelID: "imported-gemini" };
-  return { providerID: "ccbridge", modelID: "imported-session" };
-}
+function providerFor(session) { const adapter = session.source?.adapter; if (adapter === "claude-code") return { providerID: "anthropic", modelID: "imported-claude" }; if (adapter === "codex") return { providerID: "openai", modelID: "imported-codex" }; if (adapter === "gemini-cli") return { providerID: "google", modelID: "imported-gemini" }; return { providerID: "ccbridge", modelID: "imported-session" }; }
 
 function portableToOpenCode(session, cwd) {
-  const sessionID = id("ses");
-  const created = epoch(session.startedAt);
-  const updated = epoch(session.updatedAt, created);
-  const model = providerFor(session);
-  const resultByCall = new Map();
-  for (const message of session.messages ?? []) {
-    for (const part of message.content ?? []) if (part?.type === "tool-result" && part.callId) resultByCall.set(part.callId, part);
-  }
-
-  const messages = [];
-  let lastUserID = null;
-  let pendingSystem = [];
-  let tick = created;
-  const pushSyntheticUser = () => {
-    const messageID = id("msg");
-    messages.push({
-      info: { id: messageID, sessionID, role: "user", time: { created: tick++ }, agent: "build", model },
-      parts: [{ id: id("prt"), sessionID, messageID, type: "text", text: "Imported conversation context", synthetic: true, metadata: { ccbridgeSynthetic: true } }]
-    });
-    lastUserID = messageID;
-  };
-
+  const sessionID = id("ses"); const created = epoch(session.startedAt); const updated = epoch(session.updatedAt, created); const model = providerFor(session);
+  const resultByCall = new Map(); for (const message of session.messages ?? []) for (const part of message.content ?? []) if (part?.type === "tool-result" && part.callId) resultByCall.set(part.callId, part);
+  const messages = []; let lastUserID = null; let pendingSystem = []; let tick = created;
+  const pushSyntheticUser = () => { const messageID = id("msg"); messages.push({ info: { id: messageID, sessionID, role: "user", time: { created: tick++ }, agent: "build", model }, parts: [{ id: id("prt"), sessionID, messageID, type: "text", text: "Imported conversation context", synthetic: true, metadata: { ccbridgeSynthetic: true } }] }); lastUserID = messageID; };
   for (const message of session.messages ?? []) {
     const messageTime = epoch(message.createdAt, tick++);
-    if (message.role === "system") {
-      pendingSystem.push(...(message.content ?? []).filter((part) => part.type === "text").map((part) => part.text));
-      continue;
-    }
+    if (message.role === "system") { pendingSystem.push(...(message.content ?? []).filter((part) => part.type === "text").map((part) => part.text)); continue; }
     if (message.role === "tool") continue;
-
-    const messageID = id("msg");
-    const parts = [];
+    const messageID = id("msg"); const parts = [];
     for (const part of message.content ?? []) {
-      if (part?.type === "text") {
-        parts.push({ id: id("prt"), sessionID, messageID, type: "text", text: String(part.text ?? ""), metadata: message.id ? { ccbridgeOriginalMessageId: message.id } : undefined });
-      } else if (part?.type === "tool-call" && message.role === "assistant") {
-        const callID = String(part.id ?? id("call"));
-        const result = resultByCall.get(part.id);
-        let state;
+      if (part?.type === "text") parts.push({ id: id("prt"), sessionID, messageID, type: "text", text: String(part.text ?? ""), metadata: message.id ? { ccbridgeOriginalMessageId: message.id } : undefined });
+      else if (part?.type === "tool-call" && message.role === "assistant") {
+        const callID = String(part.id ?? id("call")); const result = resultByCall.get(part.id); let state;
         if (result?.isError) state = { status: "error", input: inputObject(part.input), error: outputString(result.output), metadata: {}, time: { start: messageTime, end: messageTime } };
         else if (result) state = { status: "completed", input: inputObject(part.input), output: outputString(result.output), title: String(part.name ?? "tool"), metadata: {}, time: { start: messageTime, end: messageTime } };
         else state = { status: "pending", input: inputObject(part.input), raw: outputString(part.input ?? {}) };
         parts.push({ id: id("prt"), sessionID, messageID, type: "tool", callID, tool: String(part.name ?? "unknown"), state, metadata: { ccbridgeOriginalCallId: part.id ?? null } });
       }
-      // Provider-private reasoning is deliberately not rewritten into OpenCode reasoning.
     }
     if (!parts.length) continue;
-
-    if (message.role === "user") {
-      const info = { id: messageID, sessionID, role: "user", time: { created: messageTime }, agent: "build", model };
-      if (pendingSystem.length) { info.system = pendingSystem.join("\n\n"); pendingSystem = []; }
-      messages.push({ info, parts });
-      lastUserID = messageID;
-      continue;
-    }
-    if (message.role === "assistant") {
-      if (!lastUserID) pushSyntheticUser();
-      messages.push({
-        info: {
-          id: messageID,
-          sessionID,
-          role: "assistant",
-          time: { created: messageTime, completed: messageTime },
-          parentID: lastUserID,
-          modelID: model.modelID,
-          providerID: model.providerID,
-          mode: "build",
-          agent: "build",
-          path: { cwd, root: cwd },
-          cost: 0,
-          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          finish: "stop"
-        },
-        parts
-      });
-    }
+    if (message.role === "user") { const info = { id: messageID, sessionID, role: "user", time: { created: messageTime }, agent: "build", model }; if (pendingSystem.length) { info.system = pendingSystem.join("\n\n"); pendingSystem = []; } messages.push({ info, parts }); lastUserID = messageID; continue; }
+    if (message.role === "assistant") { if (!lastUserID) pushSyntheticUser(); messages.push({ info: { id: messageID, sessionID, role: "assistant", time: { created: messageTime, completed: messageTime }, parentID: lastUserID, modelID: model.modelID, providerID: model.providerID, mode: "build", agent: "build", path: { cwd, root: cwd }, cost: 0, tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, finish: "stop" }, parts }); }
   }
-
-  return {
-    info: {
-      id: sessionID,
-      slug: `ccbridge-${session.source?.adapter ?? "session"}-${sessionID.slice(-8)}`,
-      projectID: "ccbridge",
-      directory: cwd,
-      title: session.title || `Imported ${session.source?.adapter ?? "session"} session`,
-      version: "ccbridge-import-v1",
-      metadata: { ccbridgeSourceAdapter: session.source?.adapter ?? null, ccbridgeSourceSessionId: session.source?.sessionId ?? session.id },
-      time: { created, updated }
-    },
-    messages
-  };
+  return { info: { id: sessionID, slug: `ccbridge-${session.source?.adapter ?? "session"}-${sessionID.slice(-8)}`, projectID: "ccbridge", directory: cwd, title: session.title || `Imported ${session.source?.adapter ?? "session"} session`, version: "ccbridge-import-v1", metadata: { ccbridgeSourceAdapter: session.source?.adapter ?? null, ccbridgeSourceSessionId: session.source?.sessionId ?? session.id }, time: { created, updated } }, messages };
 }
 
 export class OpenCodeAdapter {
   constructor(options = {}) {
-    this.id = "opencode";
-    this.name = "OpenCode";
-    this.aliases = ["open-code", "oc"];
+    this.id = "opencode"; this.name = "OpenCode"; this.aliases = ["open-code", "oc"];
     this.capabilities = { discover: true, read: true, write: true, nativeExport: true, nativeImport: true, losslessRead: true };
-    this.nativeExports = ["opencode/session-json"];
-    this.nativeImports = ["opencode/session-json"];
-    this.command = options.command ?? "opencode";
-    this.runner = options.runner ?? spawnSync;
+    this.portableSupport = { text: true, toolCall: true, toolResult: true, system: true, reasoning: false, attachment: false, unknownContent: false, rawEvent: false, metadata: true };
+    this.nativeExports = ["opencode/session-json"]; this.nativeImports = ["opencode/session-json"];
+    this.command = options.command ?? "opencode"; this.runner = options.runner ?? spawnSync;
   }
-
   #run(args, options = {}) { const result = this.runner(this.command, args, { encoding: "utf8", windowsHide: true, ...options }); if (result?.error || result?.status !== 0) throw runError(this.command, args, result); return String(result.stdout ?? ""); }
   async detect() { try { return { installed: true, version: this.#run(["--version"]).trim() }; } catch (error) { return { installed: false, version: null, error: error.message }; } }
   async listSessions() { const stdout = this.#run(["session", "list", "--format", "json"]); if (!stdout.trim()) return []; const rows = JSON.parse(stdout); if (!Array.isArray(rows)) throw new Error("OpenCode session list did not return a JSON array"); return rows.map((row) => ({ adapter: this.id, id: String(row.id), title: row.title ?? null, cwd: row.directory ?? null, path: null, updatedAt: iso(row.updated), createdAt: iso(row.created), projectId: row.projectId ?? null })); }
   async #exportData(sessionRef) { const stdout = this.#run(["export", String(sessionRef)]); const parsed = JSON.parse(stdout); if (!parsed?.info || !Array.isArray(parsed.messages)) throw new Error("OpenCode export returned an unsupported JSON shape"); return { data: parsed, raw: stdout }; }
-
   async readSession(sessionRef, options = {}) {
-    const mode = options.mode === "lossless" ? "lossless" : "portable";
-    const { data } = await this.#exportData(sessionRef);
-    const messages = []; const events = []; let eventIndex = 0;
+    const mode = options.mode === "lossless" ? "lossless" : "portable"; const { data } = await this.#exportData(sessionRef); const messages = []; const events = []; let eventIndex = 0;
     if (mode === "lossless") events.push(rawEvent({ index: eventIndex++, provider: this.id, kind: "session-info", timestamp: iso(data.info?.time?.created), data: data.info }));
-    for (const item of data.messages) {
-      const info = item?.info ?? {}; const content = [];
-      if (mode === "lossless") events.push(rawEvent({ index: eventIndex++, provider: this.id, kind: "message-info", timestamp: iso(info.time?.created), data: info }));
-      for (const part of item?.parts ?? []) {
-        if (mode === "lossless") events.push(rawEvent({ index: eventIndex++, provider: this.id, kind: `part:${part?.type ?? "unknown"}`, timestamp: iso(part?.time?.start), data: part }));
-        if (part?.type === "text" && typeof part.text === "string") content.push(textContent(part.text));
-        else if (part?.type === "reasoning" && mode === "lossless") content.push(reasoningContent({ provider: this.id, text: part.text ?? null, raw: part }));
-        else if (part?.type === "tool") {
-          content.push(toolCallContent({ id: part.callID ?? part.id, name: part.tool, input: part.state?.input ?? null }));
-          if (part.state?.status === "completed") content.push(toolResultContent({ callId: part.callID ?? part.id, output: part.state.output, isError: false }));
-          else if (part.state?.status === "error") content.push(toolResultContent({ callId: part.callID ?? part.id, output: part.state.error, isError: true }));
-        }
-      }
-      if (!content.length) continue;
-      messages.push({ id: info.id ?? null, parentId: info.parentID ?? null, role: info.role === "assistant" ? "assistant" : info.role === "user" ? "user" : info.role ?? "system", createdAt: iso(info.time?.created), content, metadata: mode === "lossless" ? { model: info.model ?? null, agent: info.agent ?? null } : {} });
-    }
-    const info = data.info;
-    return createPortableSession({ id: info.id ?? String(sessionRef), title: info.title ?? null, cwd: info.directory ?? null, startedAt: iso(info.time?.created), updatedAt: iso(info.time?.updated), source: { adapter: this.id, sessionId: info.id ?? String(sessionRef), path: null }, messages, metadata: { projectId: info.projectID ?? null, summary: info.summary ?? null }, events, lossless: mode === "lossless" ? { enabled: true, sourceFormat: "opencode/session-json", rawRecordCount: events.length, includesProviderReasoning: events.some((event) => event.kind === "part:reasoning"), includesUnknownEvents: true } : null });
+    for (const item of data.messages) { const info = item?.info ?? {}; const content = []; if (mode === "lossless") events.push(rawEvent({ index: eventIndex++, provider: this.id, kind: "message-info", timestamp: iso(info.time?.created), data: info })); for (const part of item?.parts ?? []) { if (mode === "lossless") events.push(rawEvent({ index: eventIndex++, provider: this.id, kind: `part:${part?.type ?? "unknown"}`, timestamp: iso(part?.time?.start), data: part })); if (part?.type === "text" && typeof part.text === "string") content.push(textContent(part.text)); else if (part?.type === "reasoning" && mode === "lossless") content.push(reasoningContent({ provider: this.id, text: part.text ?? null, raw: part })); else if (part?.type === "tool") { content.push(toolCallContent({ id: part.callID ?? part.id, name: part.tool, input: part.state?.input ?? null })); if (part.state?.status === "completed") content.push(toolResultContent({ callId: part.callID ?? part.id, output: part.state.output, isError: false })); else if (part.state?.status === "error") content.push(toolResultContent({ callId: part.callID ?? part.id, output: part.state.error, isError: true })); } } if (!content.length) continue; messages.push({ id: info.id ?? null, parentId: info.parentID ?? null, role: info.role === "assistant" ? "assistant" : info.role === "user" ? "user" : info.role ?? "system", createdAt: iso(info.time?.created), content, metadata: mode === "lossless" ? { model: info.model ?? null, agent: info.agent ?? null } : {} }); }
+    const info = data.info; return createPortableSession({ id: info.id ?? String(sessionRef), title: info.title ?? null, cwd: info.directory ?? null, startedAt: iso(info.time?.created), updatedAt: iso(info.time?.updated), source: { adapter: this.id, sessionId: info.id ?? String(sessionRef), path: null }, messages, metadata: { projectId: info.projectID ?? null, summary: info.summary ?? null }, events, lossless: mode === "lossless" ? { enabled: true, sourceFormat: "opencode/session-json", rawRecordCount: events.length, includesProviderReasoning: events.some((event) => event.kind === "part:reasoning"), includesUnknownEvents: true } : null });
   }
-
   async getNativeArtifact(sessionRef) { const { data, raw } = await this.#exportData(sessionRef); return { kind: "agent-session", format: "opencode/session-json", formatVersion: 1, sourceAdapter: this.id, content: raw, encoding: "utf8", filename: `opencode-${data.info?.id ?? String(sessionRef)}.json`, cwd: data.info?.directory ?? null, sessionId: data.info?.id ?? String(sessionRef) }; }
   async acceptsNativeArtifact(artifact) { return artifact?.format === "opencode/session-json" && Boolean(artifact.path || artifact.content); }
-
-  async importNativeArtifact(artifact, options = {}) {
-    if (!await this.acceptsNativeArtifact(artifact)) throw new Error(`OpenCode cannot import native format: ${artifact?.format ?? "unknown"}`);
-    let file = artifact.path ? path.resolve(artifact.path) : null; let root = null;
-    if (!file) { root = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-opencode-")); file = path.join(root, artifact.filename ?? "session.json"); await fs.writeFile(file, String(artifact.content), { mode: 0o600 }); }
-    try { const stdout = this.#run(["import", file], { cwd: options.cwd ?? artifact.cwd ?? process.cwd() }); const match = stdout.match(/Imported session:\s*(\S+)/i); return { target: this.id, sessionId: match?.[1] ?? artifact.sessionId ?? null, output: stdout.trim() }; }
-    finally { if (root) await fs.rm(root, { recursive: true, force: true }); }
-  }
-
-  async writePortableSession(session, options = {}) {
-    if (!session || !Array.isArray(session.messages)) throw new Error("OpenCode portable import requires a PortableSession");
-    if (session.lossless?.nativeOnly || session.metadata?.nativeOnly) throw new Error("OpenCode cannot semantically import a native-only session");
-    const cwd = path.resolve(options.cwd ?? session.cwd ?? process.cwd());
-    const data = portableToOpenCode(session, cwd);
-    return this.importNativeArtifact({ kind: "agent-session", format: "opencode/session-json", formatVersion: 1, sourceAdapter: "ccbridge", content: `${JSON.stringify(data, null, 2)}\n`, encoding: "utf8", filename: `ccbridge-${data.info.id}.json`, cwd, sessionId: data.info.id }, { cwd });
-  }
+  async importNativeArtifact(artifact, options = {}) { if (!await this.acceptsNativeArtifact(artifact)) throw new Error(`OpenCode cannot import native format: ${artifact?.format ?? "unknown"}`); let file = artifact.path ? path.resolve(artifact.path) : null; let root = null; if (!file) { root = await fs.mkdtemp(path.join(os.tmpdir(), "ccbridge-opencode-")); file = path.join(root, artifact.filename ?? "session.json"); await fs.writeFile(file, String(artifact.content), { mode: 0o600 }); } try { const stdout = this.#run(["import", file], { cwd: options.cwd ?? artifact.cwd ?? process.cwd() }); const match = stdout.match(/Imported session:\s*(\S+)/i); return { target: this.id, sessionId: match?.[1] ?? artifact.sessionId ?? null, output: stdout.trim() }; } finally { if (root) await fs.rm(root, { recursive: true, force: true }); } }
+  async writePortableSession(session, options = {}) { if (!session || !Array.isArray(session.messages)) throw new Error("OpenCode portable import requires a PortableSession"); if (session.lossless?.nativeOnly || session.metadata?.nativeOnly) throw new Error("OpenCode cannot semantically import a native-only session"); const cwd = path.resolve(options.cwd ?? session.cwd ?? process.cwd()); const data = portableToOpenCode(session, cwd); return this.importNativeArtifact({ kind: "agent-session", format: "opencode/session-json", formatVersion: 1, sourceAdapter: "ccbridge", content: `${JSON.stringify(data, null, 2)}\n`, encoding: "utf8", filename: `ccbridge-${data.info.id}.json`, cwd, sessionId: data.info.id }, { cwd }); }
 }
