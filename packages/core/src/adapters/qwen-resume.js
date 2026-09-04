@@ -43,6 +43,28 @@ function activeRecords(records, leafUuid) {
   return output;
 }
 
+function recordMetadata(record) {
+  if (!record || typeof record !== "object") return null;
+  const metadata = {};
+  for (const key of ["provenance", "goalContext", "contextWindowSize", "agentRunId", "agentRound", "agentColor", "externalInputKind", "forkedFrom"]) {
+    if (record[key] !== undefined) metadata[key] = record[key];
+  }
+  return Object.keys(metadata).length ? metadata : null;
+}
+
+function enrichMessages(messages, records) {
+  const byUuid = new Map();
+  for (const record of records ?? []) {
+    if (typeof record?.uuid !== "string" || !record.uuid) continue;
+    byUuid.set(record.uuid, { ...(byUuid.get(record.uuid) ?? {}), ...record });
+  }
+  return (messages ?? []).map((message) => {
+    const metadata = recordMetadata(byUuid.get(message?.id));
+    if (!metadata) return message;
+    return { ...message, metadata: { ...(message.metadata ?? {}), qwenRecord: metadata } };
+  });
+}
+
 function responseIsError(response) {
   if (!response || typeof response !== "object") return false;
   return Boolean(response.error ?? response.isError ?? response.is_error);
@@ -121,14 +143,15 @@ function bootstrapMessages(history, mode, agentId, bootstrapUuid) {
   }).filter(Boolean);
 }
 
-async function enhanceForkAgent(agent, mode) {
+async function enhanceAgent(agent, mode) {
   if (!agent?.source?.path) return agent;
   let records;
   try { records = await readJsonl(agent.source.path); } catch { return agent; }
+  const enriched = { ...agent, messages: enrichMessages(agent.messages, records) };
   const chain = activeRecords(records, agent?.metadata?.activeLeafUuid ?? null);
   const bootstrap = chain.find((record) => record?.type === "system" && record?.subtype === "agent_bootstrap" && record?.systemPayload?.kind === "fork" && Array.isArray(record.systemPayload.history));
   const launch = chain.find((record) => record?.type === "system" && record?.subtype === "agent_launch_prompt" && typeof record?.systemPayload?.displayText === "string");
-  if (!bootstrap || !launch) return agent;
+  if (!bootstrap || !launch) return enriched;
 
   const firstNonSystem = chain.find((record) => record?.type !== "system") ?? null;
   const launchSeedUuid = firstNonSystem?.type === "user" ? firstNonSystem.uuid ?? null : null;
@@ -141,13 +164,13 @@ async function enhanceForkAgent(agent, mode) {
     content: [textContent(launch.systemPayload.displayText)],
     metadata: { qwenForkLaunchPrompt: true, sourceRecordUuid: launch.uuid ?? null }
   };
-  const runtime = (agent.messages ?? []).filter((message) => !launchSeedUuid || message?.id !== launchSeedUuid);
+  const runtime = (enriched.messages ?? []).filter((message) => !launchSeedUuid || message?.id !== launchSeedUuid);
 
   return {
-    ...agent,
+    ...enriched,
     messages: [...inherited, launchMessage, ...runtime],
     metadata: {
-      ...(agent.metadata ?? {}),
+      ...(enriched.metadata ?? {}),
       qwenForkBootstrap: {
         enabled: true,
         bootstrapRecordUuid: bootstrap.uuid ?? null,
@@ -176,8 +199,11 @@ export class QwenCodeAdapter extends BaseQwenCodeAdapter {
   async readSession(sessionRef, options = {}) {
     const session = await super.readSession(sessionRef, options);
     const mode = options.mode === "lossless" ? "lossless" : "portable";
+    if (session?.source?.path) {
+      try { session.messages = enrichMessages(session.messages, await readJsonl(session.source.path)); } catch {}
+    }
     const agents = [];
-    for (const agent of session.agents ?? []) agents.push(await enhanceForkAgent(agent, mode));
+    for (const agent of session.agents ?? []) agents.push(await enhanceAgent(agent, mode));
     session.agents = agents;
     const forkCount = agents.filter((agent) => agent?.metadata?.qwenForkBootstrap?.enabled).length;
     session.metadata = { ...(session.metadata ?? {}), qwenForkBootstrapAgentCount: forkCount };
