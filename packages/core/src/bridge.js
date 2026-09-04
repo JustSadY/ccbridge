@@ -1,56 +1,14 @@
-import { adapterAcceptsNativeArtifact, nativeArtifactFormat } from "./adapters/contract.js";
-import { normalizeTransferMode } from "./model.js";
-import { evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
-import { materializeCcbridgeNative, readCcbridgeArchive, writeCcbridgeArchive } from "./lossless/archive.js";
-function portableUsable(session) { return Boolean(session && !session.lossless?.nativeOnly && !session.metadata?.nativeOnly); }
+import { SessionBridge as BaseSessionBridge } from "./bridge-base.js";
+import { resolveTargetCwdDetailed } from "./platform/cwd-map.js";
 
-export class SessionBridge {
-  constructor(registry) { this.registry = registry; }
-  listAdapters() { return this.registry.list().map((adapter) => ({ id: adapter.id, name: adapter.name, aliases: adapter.aliases ?? [], capabilities: adapter.capabilities ?? {}, nativeImports: adapter.nativeImports ?? adapter.nativeFormats ?? [], losslessNativeImports: adapter.losslessNativeImports ?? [], portableSupport: adapter.portableSupport ?? null })); }
-  async doctor() { const results = []; for (const adapter of this.registry.list()) { let detection; try { detection = typeof adapter.detect === "function" ? await adapter.detect() : { installed: null }; } catch (error) { detection = { installed: false, error: error.message }; } results.push({ id: adapter.id, name: adapter.name, detection }); } return results; }
-  async listSessions(adapterId) { const adapter = this.registry.get(adapterId); if (!adapter.capabilities?.discover || typeof adapter.listSessions !== "function") throw new Error(`${adapter.id} does not support session discovery`); return adapter.listSessions(); }
-  async inspect(adapterId, sessionRef, options = {}) { const adapter = this.registry.get(adapterId); if (!adapter.capabilities?.read || typeof adapter.readSession !== "function") throw new Error(`${adapter.id} does not support session reading`); const mode = normalizeTransferMode(options.mode ?? "portable"); return adapter.readSession(sessionRef, { ...options, mode }); }
+function mapped(result, options) {
+  if (!result || typeof result !== "object") return result;
+  const mapping = resolveTargetCwdDetailed(result.cwd ?? null, options);
+  return { ...result, cwd: mapping.cwd, cwdMapping: mapping.mapped ? { method: mapping.method, mapping: mapping.mapping } : null };
+}
 
-  async fidelity({ from, to, session, cwd = null, mode = "portable" }) {
-    const source = this.registry.get(from); const target = this.registry.get(to); const transferMode = normalizeTransferMode(mode); const inspectMode = source.capabilities?.losslessRead ? "lossless" : transferMode;
-    let portable = null;
-    try { if (typeof source.readSession === "function") portable = await source.readSession(session, { mode: inspectMode }); } catch (error) { if (inspectMode === transferMode) throw error; portable = await source.readSession(session, { mode: transferMode }); }
-    let artifact = null; if (typeof source.getNativeArtifact === "function") artifact = await source.getNativeArtifact(session);
-    if (artifact && typeof target.importNativeArtifact === "function" && await adapterAcceptsNativeArtifact(target, artifact)) {
-      const format = nativeArtifactFormat(artifact); const losslessGuaranteed = (target.losslessNativeImports ?? []).includes(format);
-      return { from: source.id, to: target.id, route: "native", mode: transferMode, cwd: cwd ?? artifact.cwd ?? portable?.cwd ?? null, nativeFormat: format, losslessGuaranteed, sourceNativeOnly: Boolean(portable?.lossless?.nativeOnly || portable?.metadata?.nativeOnly), fidelity: { ...nativeFidelityReport(portable, artifact, { losslessArchive: transferMode === "lossless" && portable?.lossless?.enabled }), losslessGuaranteed } };
-    }
-    if (portableUsable(portable) && typeof target.writePortableSession === "function") return { from: source.id, to: target.id, route: "portable", mode: transferMode, cwd: cwd ?? portable.cwd ?? null, sourceNativeOnly: false, fidelity: evaluatePortableFidelity(portable, target, { losslessArchive: transferMode === "lossless" && portable?.lossless?.enabled }) };
-    return { from: source.id, to: target.id, route: "none", mode: transferMode, cwd: cwd ?? portable?.cwd ?? artifact?.cwd ?? null, sourceNativeOnly: Boolean(portable?.lossless?.nativeOnly || portable?.metadata?.nativeOnly), fidelity: { targetPercent: 0, archivePercent: transferMode === "lossless" && portable?.lossless?.enabled ? 100 : null, features: [], note: "No compatible target representation route." } };
-  }
-
-  async assertStrictLossless(args) {
-    const report = await this.fidelity({ ...args, mode: "lossless" });
-    if (report.route === "none") throw new Error("Strict lossless transfer blocked: no compatible target representation route");
-    if (report.route === "native") {
-      if (!report.losslessGuaranteed) throw new Error(`Strict lossless transfer blocked: ${report.to} does not guarantee lossless native import for ${report.nativeFormat ?? "unknown format"}`);
-      return report;
-    }
-    const missing = (report.fidelity.features ?? []).filter((item) => item.target !== "preserved");
-    if (report.fidelity.targetPercent !== 100 || missing.length) {
-      const detail = missing.map((item) => `${item.label} (${item.count})`).join(", ") || `${report.fidelity.targetPercent}% target fidelity`;
-      throw new Error(`Strict lossless transfer blocked: target cannot represent ${detail}`);
-    }
-    return report;
-  }
-
-  async exportSession({ from, session, destination = null, mode = "lossless" }) { const source = this.registry.get(from); if (typeof source.readSession !== "function") throw new Error(`${source.id} does not support session reading`); const exportMode = normalizeTransferMode(mode); const portable = await source.readSession(session, { mode: exportMode }); if (exportMode === "lossless" && !portable?.lossless?.enabled) throw new Error(`${source.id} did not return lossless session data`); const nativeArtifact = typeof source.getNativeArtifact === "function" ? await source.getNativeArtifact(session) : null; return writeCcbridgeArchive(portable, { from: source.id, destination, mode: exportMode, nativeArtifact }); }
-  async planArchiveImport({ archive, to, cwd = null }) { const target = this.registry.get(to); const loaded = await readCcbridgeArchive(archive); const native = loaded.nativeArtifact; const declaredFormats = target.nativeImports ?? target.nativeFormats ?? []; if (native?.format && typeof target.importNativeArtifact === "function" && declaredFormats.includes(native.format)) return { route: "native", from: loaded.source?.adapter ?? loaded.session?.source?.adapter ?? "ccbridge-archive", to: target.id, cwd: cwd ?? native.cwd ?? loaded.session?.cwd ?? null, archivePath: loaded.archivePath ?? null, sessionId: loaded.session?.id ?? loaded.source?.sessionId ?? null, format: native.format, mode: loaded.mode ?? "portable", preservation: "archive-native" }; if (portableUsable(loaded.session) && typeof target.writePortableSession === "function") return { route: "portable", from: loaded.source?.adapter ?? loaded.session?.source?.adapter ?? "ccbridge-archive", to: target.id, cwd: cwd ?? loaded.session?.cwd ?? null, archivePath: loaded.archivePath ?? null, sessionId: loaded.session?.id ?? null, messageCount: loaded.session?.messages?.length ?? 0, eventCount: loaded.session?.events?.length ?? 0, mode: loaded.mode ?? "portable", preservation: "archive-portable" }; if (native?.format && typeof target.importNativeArtifact === "function") { const materialized = await materializeCcbridgeNative(loaded); if (materialized) { try { if (await adapterAcceptsNativeArtifact(target, materialized.artifact)) return { route: "native", from: loaded.source?.adapter ?? loaded.session?.source?.adapter ?? "ccbridge-archive", to: target.id, cwd: cwd ?? materialized.artifact.cwd ?? loaded.session?.cwd ?? null, archivePath: loaded.archivePath ?? null, sessionId: loaded.session?.id ?? loaded.source?.sessionId ?? null, format: native.format, mode: loaded.mode ?? "portable", preservation: "archive-native" }; } finally { await materialized.cleanup(); } } } throw new Error(`No compatible archive import route from ${loaded.source?.adapter ?? "archive"} to ${target.id}`); }
-  async importArchive({ archive, to, cwd = null, dryRun = false }) { const target = this.registry.get(to); const loaded = await readCcbridgeArchive(archive); const plan = await this.planArchiveImport({ archive: loaded, to, cwd }); if (dryRun) return { dryRun: true, ...plan }; if (plan.route === "portable") return { route: "portable", mode: loaded.mode ?? "portable", source: loaded.source ?? null, result: await target.writePortableSession(loaded.session, { cwd: plan.cwd, mode: loaded.mode ?? "portable" }) }; const materialized = await materializeCcbridgeNative(loaded); if (!materialized) throw new Error("Archive does not contain an embedded native artifact"); try { if (!await adapterAcceptsNativeArtifact(target, materialized.artifact)) throw new Error(`${target.id} cannot import embedded native format: ${materialized.artifact.format ?? "unknown"}`); return { route: "native", mode: loaded.mode ?? "portable", source: loaded.source ?? null, format: materialized.artifact.format, result: await target.importNativeArtifact(materialized.artifact, { cwd: plan.cwd, mode: loaded.mode ?? "portable" }) }; } finally { await materialized.cleanup(); } }
-  async planTransfer({ from, to, session, cwd, mode = "portable", bundle = null }) { const source = this.registry.get(from); const target = this.registry.get(to); const transferMode = normalizeTransferMode(mode); let portable = null; if (transferMode === "lossless") { if (typeof source.readSession !== "function") throw new Error(`${source.id} cannot produce a lossless session representation`); portable = await source.readSession(session, { mode: transferMode }); if (!portable?.lossless?.enabled) throw new Error(`${source.id} did not return lossless session data`); } let sourceArtifact = null; if (typeof source.getNativeArtifact === "function") sourceArtifact = await source.getNativeArtifact(session); if (sourceArtifact && typeof target.importNativeArtifact === "function" && await adapterAcceptsNativeArtifact(target, sourceArtifact)) return { route: "native", mode: transferMode, from: source.id, to: target.id, session, cwd: cwd ?? sourceArtifact.cwd ?? portable?.cwd ?? null, artifact: sourceArtifact, sourceArtifact, format: nativeArtifactFormat(sourceArtifact), portable, bundle, preservation: transferMode === "lossless" ? "native+ccbridge-archive" : "native" }; if (!portable && typeof source.readSession === "function") portable = await source.readSession(session, { mode: transferMode }); if (portableUsable(portable) && typeof target.writePortableSession === "function") return { route: "portable", mode: transferMode, from: source.id, to: target.id, session, cwd: cwd ?? portable.cwd ?? null, portable, sourceArtifact, bundle, sessionId: portable.id, messageCount: portable.messages.length, eventCount: portable.events?.length ?? 0, preservation: transferMode === "lossless" ? "portable+ccbridge-archive" : "portable" }; throw new Error(`No compatible transfer route from ${source.id} to ${target.id}`); }
-  async transfer({ from, to, session, cwd, mode = "portable", bundle = null, dryRun = false, strictLossless = false }) {
-    const actualMode = strictLossless ? "lossless" : mode;
-    if (strictLossless) await this.assertStrictLossless({ from, to, session, cwd });
-    const target = this.registry.get(to); const plan = await this.planTransfer({ from, to, session, cwd, mode: actualMode, bundle });
-    if (dryRun) return { dryRun: true, strictLossless, route: plan.route, mode: plan.mode, from: plan.from, to: plan.to, session: plan.session, sessionId: plan.portable?.id ?? null, cwd: plan.cwd, format: plan.format ?? null, artifact: plan.artifact ?? null, messageCount: plan.portable?.messages?.length ?? null, eventCount: plan.portable?.events?.length ?? null, preservation: plan.preservation, ccbridgeArchive: plan.mode === "lossless" ? { planned: true, destination: plan.bundle ?? "<CCBRIDGE_HOME>/archives/..." } : null };
-    const result = plan.route === "native" ? await target.importNativeArtifact(plan.artifact, { cwd: plan.cwd, mode: plan.mode }) : await target.writePortableSession(plan.portable, { cwd: plan.cwd, mode: plan.mode });
-    if (plan.mode !== "lossless") return result;
-    const ccbridgeArchive = await writeCcbridgeArchive(plan.portable, { from: plan.from, to: plan.to, destination: plan.bundle, mode: plan.mode, nativeArtifact: plan.sourceArtifact });
-    return { route: plan.route, mode: plan.mode, strictLossless, preservation: plan.preservation, result, ccbridgeArchive, losslessBundle: ccbridgeArchive };
-  }
+export class SessionBridge extends BaseSessionBridge {
+  async fidelity(args) { return mapped(await super.fidelity(args), args); }
+  async planArchiveImport(args) { return mapped(await super.planArchiveImport(args), args); }
+  async planTransfer(args) { return mapped(await super.planTransfer(args), args); }
 }
