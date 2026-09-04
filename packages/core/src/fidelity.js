@@ -8,7 +8,7 @@ const FEATURE_LABELS = {
   subagent: "subagent / agent-tree history",
   unknownContent: "unknown content blocks",
   rawEvent: "raw provider events",
-  metadata: "session metadata"
+  metadata: "session/message/agent metadata"
 };
 
 export const NATIVE_PRESERVATION_CLASSES = Object.freeze(["exact", "remapped", "best-effort"]);
@@ -30,9 +30,14 @@ export function transferPreservationClass({ route, nativePreservation = null, lo
   };
 }
 
+function hasMetadata(value) {
+  return Boolean(value && typeof value === "object" && Object.keys(value).length);
+}
+
 function countMessages(messages, counts) {
   for (const message of messages ?? []) {
     if (message?.role === "system") counts.system += 1;
+    if (hasMetadata(message?.metadata)) counts.metadata += 1;
     for (const part of message?.content ?? []) {
       if (part?.type === "text") counts.text += 1;
       else if (part?.type === "tool-call") counts.toolCall += 1;
@@ -48,10 +53,13 @@ export function analyzeSessionFeatures(session) {
   const counts = Object.fromEntries(Object.keys(FEATURE_LABELS).map((key) => [key, 0]));
   countMessages(session?.messages, counts);
   const agents = session?.agents ?? [];
-  for (const agent of agents) countMessages(agent?.messages, counts);
+  for (const agent of agents) {
+    if (hasMetadata(agent?.metadata)) counts.metadata += 1;
+    countMessages(agent?.messages, counts);
+  }
   counts.subagent = agents.length;
   counts.rawEvent = (session?.events?.length ?? 0) + agents.reduce((sum, agent) => sum + (agent?.events?.length ?? 0), 0);
-  counts.metadata = session?.metadata && Object.keys(session.metadata).length ? 1 : 0;
+  if (hasMetadata(session?.metadata)) counts.metadata += 1;
   return counts;
 }
 
