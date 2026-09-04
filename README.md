@@ -67,6 +67,20 @@ Current support includes:
 
 Remote URI references are preserved as references; ccbridge does not automatically download arbitrary remote URLs.
 
+## Subagents and agent trees
+
+`PortableSession` preserves child-agent history separately in `agents[]` rather than flattening it into fake root chat messages. Each agent can retain its own messages, raw events, metadata, parent identity and source transcript path.
+
+Claude Code support includes:
+
+- `subagents/agent-<id>.jsonl` transcripts;
+- workflow subagents under `subagents/workflows/<workflow>/agent-*.jsonl`;
+- adjacent agent metadata where present;
+- symlinked subagent transcript locations;
+- subagent attachments inside `.ccbridge` under `attachments/agents/<agent-id>/...`.
+
+Subagent JSONLs are filtered out of the normal `ccbridge list claude` top-level session list. If a target cannot represent agent trees directly, `fidelity` reports them separately and lossless archives still preserve them.
+
 ## Transfer examples
 
 ```bash
@@ -148,7 +162,7 @@ Environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOM
 
 ## Safety
 
-Use `fidelity`, `plan`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments and local paths.
+Use `fidelity`, `plan`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments, subagent transcripts and local paths.
 
 ## Status
 
