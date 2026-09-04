@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { KiloCodeAdapter } from "../src/adapters/kilo.js";
 
+const noLegacyHome = path.join(os.tmpdir(), "ccbridge-kilo-no-legacy-fixture");
 let importedPayload = null;
 function currentExport(id = "kilo-current") {
   return {
@@ -60,7 +61,7 @@ test("Kilo adapter discovers current CLI and legacy extension sessions", async (
 });
 
 test("Kilo current CLI backend uses official export data and preserves lossless reasoning", async () => {
-  const adapter = new KiloCodeAdapter({ runner: mockRunner, legacyHomes: [] });
+  const adapter = new KiloCodeAdapter({ runner: mockRunner, legacyHomes: [noLegacyHome] });
   const portable = await adapter.readSession("current:kilo-current", { mode: "portable" });
   assert.equal(portable.source.adapter, "kilo-code");
   assert.equal(portable.metadata.kiloBackend, "cli");
@@ -89,7 +90,7 @@ test("Kilo legacy backend reuses Roo-compatible task files without mislabeling p
 
 test("Kilo current native route uses Kilo format and accepts OpenCode-compatible exports", async () => {
   importedPayload = null;
-  const adapter = new KiloCodeAdapter({ runner: mockRunner, legacyHomes: [] });
+  const adapter = new KiloCodeAdapter({ runner: mockRunner, legacyHomes: [noLegacyHome] });
   const artifact = await adapter.getNativeArtifact("current:kilo-current");
   assert.equal(artifact.format, "kilo/session-json");
   assert.equal(artifact.sourceAdapter, "kilo-code");
