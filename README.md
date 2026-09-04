@@ -96,7 +96,15 @@ Codex:       ~/.codex/sessions/**/*.jsonl
 Gemini CLI:  ~/.gemini/tmp/**/chats/*.{json,jsonl}
 ```
 
-`CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected. Individual adapters may also accept explicit home/config paths through the core API.
+Environment overrides are respected:
+
+```text
+CLAUDE_CONFIG_DIR
+CODEX_HOME
+GEMINI_CLI_HOME  # home root; Gemini state is under <GEMINI_CLI_HOME>/.gemini
+```
+
+Individual adapters may also accept explicit home/config paths through the core API.
 
 Windows and Linux are supported runtime targets. Platform-specific handling is limited to filesystem/storage differences; the portable session and transfer architecture are operating-system agnostic.
 
