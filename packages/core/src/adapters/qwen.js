@@ -230,7 +230,7 @@ function partsToPortable(parts, mode, provider = "qwen-code") {
     }
     if (part.functionResponse && typeof part.functionResponse === "object") {
       const response = part.functionResponse;
-      output.push(toolResultContent({ callId: response.id ?? part.id ?? response.name ?? null, output: response.response ?? response.output ?? response, isError: responseIsError(response.response ?? response) }));
+      output.push(toolResultContent({ callId: response.id ?? part.id ?? null, output: response.response ?? response.output ?? response, isError: responseIsError(response.response ?? response) }));
       continue;
     }
     if (part.inlineData && typeof part.inlineData === "object" && typeof part.inlineData.data === "string") {
@@ -270,11 +270,31 @@ function portableMessageFromContent(content, mode, input = {}) {
   return { id: input.id ?? null, parentId: input.parentId ?? null, role: roleForContent(content, input.role ?? "system"), createdAt: input.createdAt ?? null, content: portable, metadata: input.metadata ?? {} };
 }
 
+function toolResultMetadata(record, content) {
+  if (record?.type !== "tool_result") return null;
+  const result = record.toolCallResult && typeof record.toolCallResult === "object" ? record.toolCallResult : null;
+  const explicitCallId = typeof result?.callId === "string" && result.callId ? result.callId : null;
+  const topLevelError = Boolean(result?.error);
+  for (const part of content) {
+    if (part?.type !== "tool-result") continue;
+    if (explicitCallId) part.callId = explicitCallId;
+    else if (!part.callId) part.callId = record.uuid ?? null;
+    if (topLevelError) part.isError = true;
+  }
+  return result ? {
+    callId: explicitCallId,
+    displayName: result.displayName ?? null,
+    status: result.status ?? null,
+    isError: topLevelError
+  } : null;
+}
+
 function portableMessageFromRecord(record, mode) {
   if (!record || record.type === "system" || record.subtype === "realtime_message") return null;
   const parts = record.type === "user" ? projectedUserParts(record) : record?.message?.parts;
   const content = partsToPortable(parts, mode);
   if (!content.length) return null;
+  const qwenToolResult = toolResultMetadata(record, content);
   const role = record.type === "assistant" ? "assistant" : record.type === "tool_result" ? "tool" : "user";
   return {
     id: record.uuid ?? null,
@@ -288,7 +308,8 @@ function portableMessageFromRecord(record, mode) {
       usage: record.usageMetadata ?? null,
       agentId: record.agentId ?? null,
       agentName: record.agentName ?? null,
-      isSidechain: Boolean(record.isSidechain)
+      isSidechain: Boolean(record.isSidechain),
+      qwenToolResult
     }
   };
 }
