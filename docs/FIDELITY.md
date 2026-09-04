@@ -56,7 +56,13 @@ This is the default for a native format without an explicit preservation declara
 
 `portable` means ccbridge normalized the source into `PortableSession` and the target used `writePortableSession()`.
 
-Portable fidelity is measured per feature from the actual session. A portable transfer can be 100% for a simple text-only session while being incomplete for another session containing reasoning, attachments, raw events or provider-specific metadata.
+Portable fidelity is measured per feature from the actual session. A portable transfer can be 100% for a simple text-only session while being incomplete for another session containing reasoning, attachments, raw events, subagents or provider-specific metadata.
+
+The `metadata` feature is intentionally broader than top-level `session.metadata`. It includes non-empty session metadata, message metadata, agent metadata and metadata on messages inside agents. This matters for provider state such as Qwen `forkedFrom`, goal context, agent run/round identifiers and reconstructed fork-bootstrap information. A target must not declare `metadata: true` unless its portable writer actually retains arbitrary observed metadata rather than only writing its own import tags.
+
+Likewise, `system: true` means the target preserves system-message semantics and placement for the observed portable representation. Merely folding some system text into the next user message is not enough to claim strict system fidelity, because trailing system messages or ordering can change.
+
+Message/session identifiers and timestamps remain structural context rather than separate portable feature counters. Provider-specific identity or lineage that must survive a strict transfer should be represented in metadata or use an audited native route.
 
 ## Side archive is a separate axis
 
@@ -113,6 +119,8 @@ Do not mark a native importer exact because:
 - the provider calls its export a backup.
 
 Audit the import implementation or test a round-trip that covers identity/context metadata, message/tool data, reasoning/private blocks, attachments, branches/subagents and unknown provider records relevant to that format.
+
+For `portableSupport`, make the same conservative choice. Claim a feature only when the actual writer represents it for every shape ccbridge counts under that feature. A side archive is not evidence that the target supports the feature.
 
 When uncertain, use `remapped` for a known bounded context rewrite or leave the format at the default `best-effort`.
 
