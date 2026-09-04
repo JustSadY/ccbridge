@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { createBridgeWithPlugins, detectRuntime, defaultClaudeHome, defaultCodexHome } from "@ccbridge/core";
+import {
+  createBridgeWithPlugins,
+  detectRuntime,
+  defaultClaudeHome,
+  defaultCodexHome,
+  defaultGeminiHome
+} from "@ccbridge/core";
 
 const rawArgs = process.argv.slice(2);
 
@@ -75,16 +81,22 @@ Usage:
   ccbridge plan <from> <to> <session-id-or-path> [--cwd PATH] [--plugin MODULE] [--json]
   ccbridge transfer <from> <to> <session-id-or-path> [--cwd PATH] [--dry-run] [--plugin MODULE] [--json]
 
+Built-ins:
+  claude / claude-code
+  codex
+  gemini / gemini-cli
+
 Environment:
   CCBRIDGE_PLUGINS=package-a,./local-adapter.js
 
 Examples:
   ccbridge adapters
   ccbridge list claude
+  ccbridge list gemini
   ccbridge inspect codex <session-id>
   ccbridge plan claude codex <session-id>
   ccbridge transfer claude codex <session-id> --dry-run
-  ccbridge list gemini --plugin @example/ccbridge-gemini
+  ccbridge list opencode --plugin @example/ccbridge-opencode
 `);
 }
 
@@ -107,7 +119,11 @@ try {
     print({
       runtime,
       plugins,
-      homes: { claude: defaultClaudeHome(), codex: defaultCodexHome() },
+      homes: {
+        claude: defaultClaudeHome(),
+        codex: defaultCodexHome(),
+        gemini: defaultGeminiHome()
+      },
       adapters
     });
   } else if (command === "list" || command === "sessions") {
