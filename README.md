@@ -2,7 +2,7 @@
 
 Cross-agent local session bridge for coding assistants.
 
-`ccbridge` is provider-neutral: adapters discover, read, export, import or write sessions while the core plans compatible routes. Built-ins currently cover Claude Code, OpenAI Codex, Gemini CLI, OpenCode, Google Antigravity CLI, Aider, Cline, Roo Code, Continue, Cursor, VS Code Chat/GitHub Copilot, Goose, Pi Coding Agent and Kilo Code.
+`ccbridge` is provider-neutral: adapters discover, read, export, import or write sessions while the core plans compatible routes. Built-ins currently cover Claude Code, OpenAI Codex, Gemini CLI, Qwen Code, OpenCode, Google Antigravity CLI, Aider, Cline, Roo Code, Continue, Cursor, VS Code Chat/GitHub Copilot, Goose, Pi Coding Agent and Kilo Code.
 
 ## Repository layout
 
@@ -19,6 +19,7 @@ packages/
 | Claude Code | yes | yes | yes | no | exports Claude session JSONL; Codex/Goose can import it |
 | OpenAI Codex | yes | yes | yes | no | imports Claude JSONL via app-server; Goose can import Codex JSONL |
 | Gemini CLI | yes | yes | yes | no | no target importer yet |
+| Qwen Code | yes | yes | yes | no | native JSONL export; parent-chain, compression and subagent aware; no target importer yet |
 | OpenCode | yes | yes | yes | yes | official `export` / `import` JSON; native import is remapped |
 | Antigravity CLI | yes | no | native-only | no | SQLite + WAL/SHM lossless export |
 | Aider | yes | yes | yes | no | Markdown history export/read |
@@ -31,7 +32,7 @@ packages/
 | Pi Coding Agent | yes | yes | yes | no | native session-tree JSONL; Goose can import it |
 | Kilo Code | yes | yes | yes | yes | current official CLI JSON plus legacy Roo-compatible task store; native import is remapped |
 
-Codex imports use `codex app-server` / `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly. OpenCode, Goose and current Kilo use official CLI import/export surfaces instead of touching private databases. Roo Code is read/export-only because its upstream repository is archived. Continue uses the provider's explicit transcript export rather than assuming a private live-session store. Pi sessions are tree-structured: portable reads follow the active leaf/current compaction context while lossless mode preserves inactive branches as raw events. Kilo supports both the current CLI backend and older extension task files; current sessions are preferred, and ambiguous ids can be addressed with `current:<id>` or `legacy:<id>`.
+Codex imports use `codex app-server` / `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly. OpenCode, Goose and current Kilo use official CLI import/export surfaces instead of touching private databases. Roo Code is read/export-only because its upstream repository is archived. Continue uses the provider's explicit transcript export rather than assuming a private live-session store. Pi sessions are tree-structured: portable reads follow the active leaf/current compaction context while lossless mode preserves inactive branches as raw events. Qwen Code similarly follows the provider's active `parentUuid` chain and current `chat_compression` resume context, while retaining every physical root/subagent record in lossless mode. Kilo supports both the current CLI backend and older extension task files; current sessions are preferred, and ambiguous ids can be addressed with `current:<id>` or `legacy:<id>`.
 
 ## Install from source
 
@@ -54,7 +55,7 @@ The dependency-free terminal flow scans local sessions, lets you choose source a
 ```bash
 ccbridge scan
 ccbridge scan --sessions --limit 10
-ccbridge scan claude codex opencode cursor copilot goose pi kilo --json
+ccbridge scan claude codex gemini qwen opencode cursor copilot goose pi kilo --json
 ```
 
 `scan` reports adapter installation/store state, discovery support, session counts, newest session time and per-adapter errors. One broken adapter does not stop the remaining scan.
@@ -65,11 +66,13 @@ Individual discovery and inspection:
 ccbridge adapters
 ccbridge doctor
 ccbridge list claude
+ccbridge list qwen
 ccbridge list cursor
 ccbridge list copilot
 ccbridge list goose
 ccbridge list pi
 ccbridge list kilo
+ccbridge inspect qwen <session-id> --all
 ccbridge inspect pi <session-id> --all
 ccbridge inspect kilo current:<session-id> --all
 ccbridge inspect kilo legacy:<task-id> --all
@@ -80,6 +83,7 @@ ccbridge inspect kilo legacy:<task-id> --all
 ```bash
 ccbridge routes
 ccbridge routes claude codex
+ccbridge routes qwen opencode
 ccbridge routes opencode opencode
 ccbridge routes pi goose --json
 ```
@@ -99,6 +103,7 @@ Lossless `--all` adds a separate `.ccbridge` side archive. For example `remapped
 
 ```bash
 ccbridge compatibility
+ccbridge compatibility qwen <session-id>
 ccbridge compatibility cursor <session-id>
 ccbridge compatibility pi <session-id>
 ccbridge compatibility kilo current:<session-id>
@@ -110,6 +115,7 @@ Built-in adapters have explicit format contracts. Unknown installed versions are
 
 ```bash
 ccbridge export claude <session-id> --output ./session.ccbridge
+ccbridge export qwen <session-id> --output ./qwen.ccbridge
 ccbridge export cursor <session-id> --output ./cursor.ccbridge
 ccbridge export copilot <session-id> --output ./copilot.ccbridge
 ccbridge export goose <session-id> --output ./goose.ccbridge
@@ -140,11 +146,13 @@ Sanitize never overwrites its source. Embedded native/provenance payloads are om
 
 ## Attachments and media
 
-Portable sessions can carry images, documents, audio and generic files. Byte-backed attachments are stored as separate integrity-checked archive entries. Current support includes Claude Code inline image/document content, Codex `input_image` / `input_audio`, Gemini CLI `inlineData` / `fileData`, OpenCode/Kilo file parts, Roo Anthropic-style image/document blocks, Goose image/document blocks and Pi image content. Remote URI references are preserved but not automatically downloaded.
+Portable sessions can carry images, documents, audio and generic files. Byte-backed attachments are stored as separate integrity-checked archive entries. Current support includes Claude Code inline image/document content, Codex `input_image` / `input_audio`, Gemini CLI and Qwen Code `inlineData` / `fileData`, OpenCode/Kilo file parts, Roo Anthropic-style image/document blocks, Goose image/document blocks and Pi image content. Remote URI references are preserved but not automatically downloaded.
 
 ## Subagents, branches and agent trees
 
 `PortableSession` preserves child-agent history separately in `agents[]`. Claude Code support includes `subagents/agent-<id>.jsonl`, workflow subagents, adjacent metadata, symlinked transcripts and subagent attachments. Cursor supports `agent-transcripts/<session>/subagents/*.jsonl`.
+
+Qwen Code stores the root transcript as an append-only `uuid` / `parentUuid` tree and background subagents under `<projectDir>/subagents/<sessionId>/agent-<id>.jsonl` with `.meta.json` sidecars. Portable mode follows the provider's active leaf and current compression context. Lossless mode preserves inactive root branches, malformed physical records, provider thought parts and subagent transcripts as historical data without replaying tools.
 
 Pi uses a different tree model inside one append-only JSONL. ccbridge finds the active leaf, walks `parentId` back to root, applies the latest compaction boundary for portable context, and retains every inactive branch/label/custom entry as raw lossless events.
 
@@ -155,6 +163,7 @@ ccbridge transfer claude codex <session-id> --all
 ccbridge transfer claude opencode <session-id>
 ccbridge transfer codex opencode <session-id>
 ccbridge transfer gemini opencode <session-id>
+ccbridge transfer qwen opencode <session-id> --all
 ccbridge transfer cursor opencode <session-id> --all
 ccbridge transfer copilot opencode <session-id> --all
 ccbridge transfer pi opencode <session-id> --all
@@ -163,10 +172,13 @@ ccbridge transfer claude goose <session-id> --all
 ccbridge transfer codex goose <session-id> --all
 ccbridge transfer pi goose <session-id> --all
 
+ccbridge transfer qwen kilo <session-id> --all
 ccbridge transfer opencode kilo <session-id> --all
 ccbridge transfer kilo opencode current:<session-id> --all
 ccbridge transfer claude kilo <session-id> --all
 ```
+
+Qwen Code currently has no ccbridge native target importer. Transfers such as Qwen -> OpenCode/Kilo therefore use the portable route; with `--all`, the root native JSONL and lossless normalized/raw context are additionally retained in the `.ccbridge` archive. Provider thought parts are historical lossless data and are not injected into another provider's reasoning field by default.
 
 Goose's official `session import` accepts Goose JSON plus Claude Code, Codex and Pi JSONL. Cross-provider imports remain `best-effort`. Goose JSON -> Goose is `remapped`, not `exact`: current Goose creates a new session identity, overrides the imported session type to `User`, and does not restore every exported session-level metadata field. With `--all`, the original Goose JSON remains available in the `.ccbridge` side archive.
 
@@ -193,7 +205,7 @@ Windows and Linux are normal runtime targets. The bridge maps only the `cwd` use
 ```bash
 ccbridge transfer claude codex <session-id> --target-profile wsl --dry-run
 ccbridge import ./session.ccbridge opencode --target-profile windows
-ccbridge transfer pi opencode <session-id> \
+ccbridge transfer qwen opencode <session-id> \
   --map-cwd 'C:\Users\me\Projects=/home/me/projects'
 ```
 
@@ -203,6 +215,7 @@ Supported profiles are `native`, `windows`, `wsl`, and `linux`.
 
 ```bash
 ccbridge fidelity claude opencode <session-id> --all
+ccbridge fidelity qwen opencode <session-id> --all
 ccbridge transfer <from> <to> <session> --strict-lossless --dry-run
 ccbridge transfer <from> <to> <session> --strict-lossless
 ```
@@ -235,6 +248,8 @@ See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTAB
 Claude Code:      ~/.claude/projects/**/*.jsonl
 Codex:            ~/.codex/sessions/**/*.jsonl
 Gemini CLI:       ~/.gemini/tmp/**/chats/*.{json,jsonl}
+Qwen Code:        <QWEN_RUNTIME_DIR|QWEN_HOME|~/.qwen>/projects/*/chats/**/*.jsonl
+Qwen subagents:   <projectDir>/subagents/<sessionId>/agent-*.{jsonl,meta.json}
 Antigravity CLI:  ~/.gemini/antigravity-cli/conversations/*.db
 Aider:            .aider.chat.history.md (or AIDER_CHAT_HISTORY_FILE)
 Cline:            ~/.cline/data/sessions/<id>/<id>.messages.json
@@ -249,7 +264,7 @@ Kilo legacy:      VS Code globalStorage/kilocode.kilo-code/tasks/<id>/api_conver
 ccbridge:         ~/.ccbridge/archives/*.ccbridge
 ```
 
-Important environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `CCBRIDGE_ANTIGRAVITY_HOME`, `AIDER_CHAT_HISTORY_FILE`, `CCBRIDGE_AIDER_ROOTS`, `CCBRIDGE_ROO_HOME`, `CCBRIDGE_CONTINUE_ROOTS`, `CURSOR_AGENT_HOME`, `CCBRIDGE_VSCODE_CHAT_ROOTS`, `CCBRIDGE_GOOSE_EXPORT_ROOTS`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `CCBRIDGE_PI_SESSION_ROOTS`, `CCBRIDGE_KILO_LEGACY_HOME`, `CCBRIDGE_HOME`, and `CCBRIDGE_PASSPHRASE`.
+Important environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `QWEN_HOME`, `QWEN_RUNTIME_DIR`, `CCBRIDGE_QWEN_SESSION_ROOTS`, `CCBRIDGE_ANTIGRAVITY_HOME`, `AIDER_CHAT_HISTORY_FILE`, `CCBRIDGE_AIDER_ROOTS`, `CCBRIDGE_ROO_HOME`, `CCBRIDGE_CONTINUE_ROOTS`, `CURSOR_AGENT_HOME`, `CCBRIDGE_VSCODE_CHAT_ROOTS`, `CCBRIDGE_GOOSE_EXPORT_ROOTS`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `CCBRIDGE_PI_SESSION_ROOTS`, `CCBRIDGE_KILO_LEGACY_HOME`, `CCBRIDGE_HOME`, and `CCBRIDGE_PASSPHRASE`.
 
 ## Safety
 
