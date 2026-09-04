@@ -68,6 +68,31 @@ function projectDirForSession(file) {
   return path.dirname(path.dirname(path.resolve(file)));
 }
 
+function subagentDir(projectDir, sessionId) {
+  return path.join(projectDir, "subagents", String(sessionId));
+}
+
+async function listSubagentDirEntries(projectDir, sessionId) {
+  try { return await fs.readdir(subagentDir(projectDir, sessionId), { withFileTypes: true }); } catch { return []; }
+}
+
+async function countSubagents(projectDir, sessionId) {
+  const entries = await listSubagentDirEntries(projectDir, sessionId);
+  return entries.filter((entry) => entry.isFile() && entry.name.startsWith("agent-") && entry.name.endsWith(".jsonl")).length;
+}
+
+async function nativeSubagentCompanions(projectDir, sessionId) {
+  const root = subagentDir(projectDir, sessionId);
+  const entries = await listSubagentDirEntries(projectDir, sessionId);
+  const companions = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.startsWith("agent-")) continue;
+    if (entry.name.endsWith(".jsonl")) companions.push({ path: path.join(root, entry.name), filename: `subagents/${entry.name}`, mediaType: "application/x-ndjson" });
+    else if (entry.name.endsWith(".meta.json")) companions.push({ path: path.join(root, entry.name), filename: `subagents/${entry.name}`, mediaType: "application/json" });
+  }
+  return companions;
+}
+
 function eventKind(record) {
   const type = typeof record?.type === "string" ? record.type : "unknown";
   const subtype = typeof record?.subtype === "string" ? record.subtype : null;
@@ -293,9 +318,8 @@ async function parseTranscript(file, mode, provider = "qwen-code") {
 }
 
 async function readSubagents(projectDir, sessionId, mode) {
-  const root = path.join(projectDir, "subagents", String(sessionId));
-  let entries;
-  try { entries = await fs.readdir(root, { withFileTypes: true }); } catch { return []; }
+  const root = subagentDir(projectDir, sessionId);
+  const entries = await listSubagentDirEntries(projectDir, sessionId);
   const agents = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.startsWith("agent-") || !entry.name.endsWith(".jsonl")) continue;
@@ -374,7 +398,6 @@ export class QwenCodeAdapter {
         const stat = await fs.stat(file);
         const projectDir = projectDirForSession(file);
         const sessionId = String(first.sessionId ?? path.basename(file, ".jsonl"));
-        const agents = await readSubagents(projectDir, sessionId, "portable");
         sessions.push({
           adapter: this.id,
           id: sessionId,
@@ -389,7 +412,7 @@ export class QwenCodeAdapter {
           activeLeafUuid: parsed.chain.leafUuid,
           activeRecordCount: parsed.chain.records.length,
           totalRecordCount: parsed.records.length,
-          subagentCount: agents.length,
+          subagentCount: await countSubagents(projectDir, sessionId),
           archived: path.basename(path.dirname(file)) === "archive"
         });
       } catch {}
@@ -464,6 +487,8 @@ export class QwenCodeAdapter {
     const parsed = await parseTranscript(file, "portable");
     const first = parsed.chain.records[0] ?? parsed.records[0];
     if (!first?.sessionId) throw new Error(`Qwen Code transcript is missing a valid session id: ${file}`);
+    const projectDir = projectDirForSession(file);
+    const sessionId = String(first.sessionId);
     return {
       kind: "agent-session",
       format: "qwen-code/session-jsonl",
@@ -471,9 +496,10 @@ export class QwenCodeAdapter {
       sourceAdapter: this.id,
       path: file,
       filename: path.basename(file),
+      companions: await nativeSubagentCompanions(projectDir, sessionId),
       cwd: first.cwd ?? null,
-      sessionId: String(first.sessionId),
-      projectDir: projectDirForSession(file)
+      sessionId,
+      projectDir
     };
   }
 }
