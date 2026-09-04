@@ -1,12 +1,14 @@
 import { AdapterRegistry } from "./adapters/registry.js";
 import { ClaudeCodeAdapter } from "./adapters/claude.js";
 import { CodexAdapter } from "./adapters/codex.js";
+import { GeminiCliAdapter } from "./adapters/gemini.js";
 import { registerAdapterModules } from "./adapters/loader.js";
 import { SessionBridge } from "./bridge.js";
 
 export { AdapterRegistry } from "./adapters/registry.js";
 export { ClaudeCodeAdapter } from "./adapters/claude.js";
 export { CodexAdapter } from "./adapters/codex.js";
+export { GeminiCliAdapter } from "./adapters/gemini.js";
 export { SessionBridge } from "./bridge.js";
 export {
   adapterAcceptsNativeArtifact,
@@ -22,6 +24,7 @@ export {
   detectRuntime,
   defaultClaudeHome,
   defaultCodexHome,
+  defaultGeminiHome,
   normalizePathKey,
   windowsPathToWsl,
   wslPathToWindows
@@ -31,6 +34,7 @@ export function createDefaultRegistry(options = {}) {
   const registry = new AdapterRegistry();
   registry.register(new ClaudeCodeAdapter(options.claude));
   registry.register(new CodexAdapter(options.codex));
+  registry.register(new GeminiCliAdapter(options.gemini));
   return registry;
 }
 
