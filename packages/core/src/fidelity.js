@@ -30,11 +30,10 @@ export function transferPreservationClass({ route, nativePreservation = null, lo
   };
 }
 
-export function analyzeSessionFeatures(session) {
-  const counts = Object.fromEntries(Object.keys(FEATURE_LABELS).map((key) => [key, 0]));
-  for (const message of session?.messages ?? []) {
-    if (message.role === "system") counts.system += 1;
-    for (const part of message.content ?? []) {
+function countMessages(messages, counts) {
+  for (const message of messages ?? []) {
+    if (message?.role === "system") counts.system += 1;
+    for (const part of message?.content ?? []) {
       if (part?.type === "text") counts.text += 1;
       else if (part?.type === "tool-call") counts.toolCall += 1;
       else if (part?.type === "tool-result") counts.toolResult += 1;
@@ -43,8 +42,15 @@ export function analyzeSessionFeatures(session) {
       else counts.unknownContent += 1;
     }
   }
-  counts.subagent = session?.agents?.length ?? 0;
-  counts.rawEvent = session?.events?.length ?? 0;
+}
+
+export function analyzeSessionFeatures(session) {
+  const counts = Object.fromEntries(Object.keys(FEATURE_LABELS).map((key) => [key, 0]));
+  countMessages(session?.messages, counts);
+  const agents = session?.agents ?? [];
+  for (const agent of agents) countMessages(agent?.messages, counts);
+  counts.subagent = agents.length;
+  counts.rawEvent = (session?.events?.length ?? 0) + agents.reduce((sum, agent) => sum + (agent?.events?.length ?? 0), 0);
   counts.metadata = session?.metadata && Object.keys(session.metadata).length ? 1 : 0;
   return counts;
 }
