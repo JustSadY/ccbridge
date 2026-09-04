@@ -32,16 +32,25 @@ npm test
 npm link --workspace @ccbridge/cli
 ```
 
-## Discovery and inspection
+## Automatic discovery
+
+Scan every built-in and loaded plugin adapter:
+
+```bash
+ccbridge scan
+ccbridge scan --sessions --limit 10
+ccbridge scan claude codex opencode --json
+```
+
+`scan` reports adapter installation/store state, discovery support, session counts, newest session time and per-adapter errors. One broken adapter does not stop the remaining scan. `--sessions` includes a bounded list of session summaries.
+
+Individual discovery and inspection are still available:
 
 ```bash
 ccbridge adapters
 ccbridge doctor
 ccbridge list claude
-ccbridge list codex
-ccbridge list gemini
-ccbridge list opencode
-ccbridge list antigravity
+ccbridge inspect claude <session-id> --all
 ```
 
 ## Universal `.ccbridge` archive
@@ -52,7 +61,7 @@ ccbridge export antigravity <conversation-id> --output ./agy.ccbridge
 ccbridge import ./session.ccbridge codex --cwd /path/to/project --dry-run
 ```
 
-`.ccbridge` v2 uses a manifest with integrity-checked entries for portable session data, raw events, native artifacts, companion files and attachments. Every entry records byte size and SHA-256. Older v1 archives remain readable.
+`.ccbridge` v2 uses a manifest with integrity-checked entries for portable session data, raw events, native artifacts, companion files, attachments and provenance archives. Every entry records byte size and SHA-256. Older v1 archives remain readable.
 
 ## Attachments and media
 
@@ -71,15 +80,7 @@ Remote URI references are preserved as references; ccbridge does not automatical
 
 `PortableSession` preserves child-agent history separately in `agents[]` rather than flattening it into fake root chat messages. Each agent can retain its own messages, raw events, metadata, parent identity and source transcript path.
 
-Claude Code support includes:
-
-- `subagents/agent-<id>.jsonl` transcripts;
-- workflow subagents under `subagents/workflows/<workflow>/agent-*.jsonl`;
-- adjacent agent metadata where present;
-- symlinked subagent transcript locations;
-- subagent attachments inside `.ccbridge` under `attachments/agents/<agent-id>/...`.
-
-Subagent JSONLs are filtered out of the normal `ccbridge list claude` top-level session list. If a target cannot represent agent trees directly, `fidelity` reports them separately and lossless archives still preserve them.
+Claude Code support includes `subagents/agent-<id>.jsonl`, workflow subagents, adjacent metadata, symlinked transcripts and subagent attachments. Subagent JSONLs are filtered out of the normal top-level Claude session list.
 
 ## Transfer examples
 
@@ -92,6 +93,35 @@ ccbridge transfer gemini opencode <session-id>
 
 Antigravity is currently native-only, so semantic `antigravity -> codex/opencode` transfer is rejected rather than silently importing an empty conversation.
 
+## Fork, merge and provenance
+
+Universal archives can be branched and combined without overwriting their source history:
+
+```bash
+ccbridge fork ./session.ccbridge --output ./fork.ccbridge
+ccbridge merge ./branch-a.ccbridge ./branch-b.ccbridge --output ./merged.ccbridge
+```
+
+Fork embeds the complete parent archive as provenance. Merge performs timeline/no-dedupe combination, namespaces colliding agent ids and embeds both complete source archives under `provenance/sources/`.
+
+Recover a preserved source archive:
+
+```bash
+ccbridge extract-provenance merged.ccbridge \
+  provenance/sources/left-branch-a.ccbridge \
+  --output recovered.ccbridge
+```
+
+## Diff and verification
+
+```bash
+ccbridge diff before.ccbridge after.ccbridge --limit 50
+ccbridge verify session.ccbridge --deep
+ccbridge verify-transfer source.ccbridge opencode ses_123 --all
+```
+
+`diff` separates semantic session differences from archive entry/SHA-256 differences. `verify` checks archive integrity, PortableSession structure, tool call/result pairing, attachments, agent relationships and optional nested provenance. `verify-transfer` reads the actual target session and reports preservation percentages per feature, including reasoning/thinking when requested.
+
 ## Cross-platform cwd mapping
 
 Windows and Linux are normal runtime targets. The bridge only maps the `cwd` used for target import; it does not rewrite archived provider payloads.
@@ -99,35 +129,17 @@ Windows and Linux are normal runtime targets. The bridge only maps the `cwd` use
 Automatic Windows/WSL conversion:
 
 ```bash
-ccbridge transfer claude codex <session-id> \
-  --target-profile wsl \
-  --dry-run
-
-ccbridge import ./session.ccbridge opencode \
-  --target-profile windows
+ccbridge transfer claude codex <session-id> --target-profile wsl --dry-run
+ccbridge import ./session.ccbridge opencode --target-profile windows
 ```
 
-Supported profiles:
-
-```text
-native
-windows
-wsl
-linux
-```
+Supported profiles are `native`, `windows`, `wsl`, and `linux`.
 
 Explicit prefix mappings are repeatable and take priority over profile conversion:
 
 ```bash
 ccbridge transfer claude opencode <session-id> \
   --map-cwd 'C:\Users\me\Projects=/home/me/projects'
-```
-
-Example mapping:
-
-```text
-C:\Users\me\Projects\ccbridge
-→ /home/me/projects/ccbridge
 ```
 
 ## Fidelity and strict mode
@@ -143,7 +155,7 @@ Normal `--all` can transfer representable data while preserving the rest in the 
 
 ```bash
 ccbridge adapters --plugin @example/ccbridge-agent
-CCBRIDGE_PLUGINS=@example/a,./local-adapter.js ccbridge adapters
+CCBRIDGE_PLUGINS=@example/a,./local-adapter.js ccbridge scan
 ```
 
 See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), [docs/ARCHIVE.md](docs/ARCHIVE.md), and [docs/ANTIGRAVITY.md](docs/ANTIGRAVITY.md).
@@ -162,7 +174,7 @@ Environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOM
 
 ## Safety
 
-Use `fidelity`, `plan`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments, subagent transcripts and local paths.
+Use `fidelity`, `plan`, `verify`, or `--dry-run` before mutation. Lossless archives can contain sensitive prompts, reasoning, signatures, tool output, file content, attachments, subagent transcripts and local paths.
 
 ## Status
 
