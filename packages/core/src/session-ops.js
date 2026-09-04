@@ -86,7 +86,11 @@ export function mergePortableSessions(left, right, options = {}) {
     agents,
     metadata: {
       ccbridgeOperations: [...operations(left.metadata), ...operations(right.metadata), mergeOp],
-      ccbridgeMerge: mergeOp
+      ccbridgeMerge: mergeOp,
+      ccbridgeMergeSources: {
+        left: { descriptor: leftSource, metadata: structuredClone(left.metadata ?? {}), lossless: structuredClone(left.lossless ?? null) },
+        right: { descriptor: rightSource, metadata: structuredClone(right.metadata ?? {}), lossless: structuredClone(right.lossless ?? null) }
+      }
     },
     events,
     lossless: eitherLossless ? {
