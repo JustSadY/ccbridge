@@ -2,7 +2,7 @@
 
 Cross-agent local session bridge for coding assistants.
 
-`ccbridge` is provider-neutral: adapters discover, read, export, import or write sessions while the core plans compatible routes. Built-ins currently cover Claude Code, OpenAI Codex, Gemini CLI, OpenCode and Google Antigravity CLI.
+`ccbridge` is provider-neutral: adapters discover, read, export, import or write sessions while the core plans compatible routes. Built-ins currently cover Claude Code, OpenAI Codex, Gemini CLI, OpenCode, Google Antigravity CLI, Aider, Cline, Roo Code and Continue exports.
 
 ## Repository layout
 
@@ -20,9 +20,13 @@ packages/
 | OpenAI Codex | yes | yes | yes | no | imports Claude session JSONL via app-server |
 | Gemini CLI | yes | yes | yes | no | no target importer yet |
 | OpenCode | yes | yes | yes | yes | official `export` / `import` JSON |
-| Antigravity CLI | yes | no | native-only | no | lossless SQLite + WAL/SHM export |
+| Antigravity CLI | yes | no | native-only | no | SQLite + WAL/SHM lossless export |
+| Aider | yes | yes | yes | no | Markdown history export/read |
+| Cline | yes | yes | yes | no | canonical `messages.json` v1 export/read |
+| Roo Code | yes | yes | yes | no | API history + UI/metadata companions |
+| Continue | exported transcripts | yes | yes | no | official Markdown transcript read/export |
 
-Codex imports use `codex app-server` / `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly. OpenCode uses its official CLI import/export surface instead of touching its private database.
+Codex imports use `codex app-server` / `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly. OpenCode uses its official CLI import/export surface instead of touching its private database. Roo Code is read/export-only because its upstream repository is archived; Continue uses the provider's explicit transcript export rather than assuming a private live-session store.
 
 ## Install from source
 
@@ -42,29 +46,44 @@ The dependency-free terminal flow scans local sessions, lets you choose source a
 
 ## Automatic discovery
 
-Scan every built-in and loaded plugin adapter:
-
 ```bash
 ccbridge scan
 ccbridge scan --sessions --limit 10
-ccbridge scan claude codex opencode --json
+ccbridge scan claude codex opencode aider cline roo continue --json
 ```
 
-`scan` reports adapter installation/store state, discovery support, session counts, newest session time and per-adapter errors. One broken adapter does not stop the remaining scan. `--sessions` includes a bounded list of session summaries.
+`scan` reports adapter installation/store state, discovery support, session counts, newest session time and per-adapter errors. One broken adapter does not stop the remaining scan.
 
-Individual discovery and inspection are still available:
+Individual discovery and inspection:
 
 ```bash
 ccbridge adapters
 ccbridge doctor
 ccbridge list claude
+ccbridge list aider
+ccbridge list cline
+ccbridge list roo
+ccbridge list continue
 ccbridge inspect claude <session-id> --all
 ```
+
+## Compatibility / schema drift
+
+```bash
+ccbridge compatibility
+ccbridge compatibility cline <session-id>
+ccbridge compatibility roo <task-id>
+```
+
+Built-in adapters have explicit format contracts. Unknown installed versions are reported as `unverified`; real source-format/content drift is reported separately and can return a non-zero status for automation.
 
 ## Universal `.ccbridge` archive
 
 ```bash
 ccbridge export claude <session-id> --output ./session.ccbridge
+ccbridge export cline <session-id> --output ./cline.ccbridge
+ccbridge export roo <task-id> --output ./roo.ccbridge
+ccbridge export continue <exported-session> --output ./continue.ccbridge
 ccbridge export antigravity <conversation-id> --output ./agy.ccbridge
 ccbridge import ./session.ccbridge codex --cwd /path/to/project --dry-run
 ```
@@ -73,21 +92,13 @@ ccbridge import ./session.ccbridge codex --cwd /path/to/project --dry-run
 
 ## Privacy and encrypted archives
 
-Lossless archives may contain credentials, file contents, environment data, raw tool output and provider-private reasoning. Create a shareable sanitized copy instead of editing the original:
-
 ```bash
 ccbridge sanitize session.ccbridge \
   --output share.ccbridge \
   --redact-secrets \
   --exclude-env \
   --exclude-files
-```
 
-Sanitize never overwrites its source. When any privacy transform is requested, embedded native artifacts and provenance source archives are intentionally omitted because ccbridge cannot guarantee redaction inside arbitrary private DB/JSONL payloads. Native-only sessions such as the current Antigravity adapter are rejected instead of producing misleading empty sanitized archives.
-
-Encrypt an archive with AES-256-GCM and a scrypt-derived key:
-
-```bash
 CCBRIDGE_PASSPHRASE='use-a-long-secret' \
   ccbridge encrypt share.ccbridge --output share.ccbridge.enc
 
@@ -95,26 +106,15 @@ CCBRIDGE_PASSPHRASE='use-a-long-secret' \
   ccbridge decrypt share.ccbridge.enc --output restored.ccbridge
 ```
 
-For scripts, a private passphrase file can be used with `--passphrase-file`. Plaintext `--passphrase` arguments are intentionally unsupported so secrets do not land in shell history. Encrypted envelopes expose only cipher/KDF parameters and ciphertext, not session metadata.
+Sanitize never overwrites its source. Embedded native/provenance payloads are omitted when privacy transforms are requested because arbitrary private formats cannot be safely redacted. Native-only sessions are rejected instead of producing misleading empty sanitized archives. Encryption uses AES-256-GCM with a scrypt-derived key; plaintext `--passphrase` CLI arguments are intentionally unsupported.
 
 ## Attachments and media
 
-Portable sessions can carry images, documents, audio and generic files. Byte-backed attachments are stored as separate integrity-checked archive entries.
-
-Current support includes:
-
-- Claude Code inline image/document content;
-- Codex `input_image` and `input_audio` content;
-- Gemini CLI `inlineData` and `fileData` references;
-- OpenCode `file` parts and portable write/import via data URLs.
-
-Remote URI references are preserved as references; ccbridge does not automatically download arbitrary remote URLs.
+Portable sessions can carry images, documents, audio and generic files. Byte-backed attachments are stored as separate integrity-checked archive entries. Current support includes Claude Code inline image/document content, Codex `input_image` / `input_audio`, Gemini CLI `inlineData` / `fileData`, OpenCode file parts, and Roo Anthropic-style image/document blocks. Remote URI references are preserved but not automatically downloaded.
 
 ## Subagents and agent trees
 
-`PortableSession` preserves child-agent history separately in `agents[]` rather than flattening it into fake root chat messages. Each agent can retain its own messages, raw events, metadata, parent identity and source transcript path.
-
-Claude Code support includes `subagents/agent-<id>.jsonl`, workflow subagents, adjacent metadata, symlinked transcripts and subagent attachments. Subagent JSONLs are filtered out of the normal top-level Claude session list.
+`PortableSession` preserves child-agent history separately in `agents[]`. Claude Code support includes `subagents/agent-<id>.jsonl`, workflow subagents, adjacent metadata, symlinked transcripts and subagent attachments.
 
 ## Transfer examples
 
@@ -123,58 +123,38 @@ ccbridge transfer claude codex <session-id> --all
 ccbridge transfer claude opencode <session-id>
 ccbridge transfer codex opencode <session-id>
 ccbridge transfer gemini opencode <session-id>
+ccbridge transfer aider opencode <session-id> --all
+ccbridge transfer cline opencode <session-id> --all
+ccbridge transfer roo opencode <task-id> --all
+ccbridge transfer continue opencode <exported-session> --all
 ```
 
 Antigravity is currently native-only, so semantic `antigravity -> codex/opencode` transfer is rejected rather than silently importing an empty conversation.
 
-## Fork, merge and provenance
-
-Universal archives can be branched and combined without overwriting their source history:
+## Fork, merge, diff and verification
 
 ```bash
 ccbridge fork ./session.ccbridge --output ./fork.ccbridge
 ccbridge merge ./branch-a.ccbridge ./branch-b.ccbridge --output ./merged.ccbridge
-```
-
-Fork embeds the complete parent archive as provenance. Merge performs timeline/no-dedupe combination, namespaces colliding agent ids and embeds both complete source archives under `provenance/sources/`.
-
-Recover a preserved source archive:
-
-```bash
-ccbridge extract-provenance merged.ccbridge \
-  provenance/sources/left-branch-a.ccbridge \
-  --output recovered.ccbridge
-```
-
-## Diff and verification
-
-```bash
 ccbridge diff before.ccbridge after.ccbridge --limit 50
 ccbridge verify session.ccbridge --deep
 ccbridge verify-transfer source.ccbridge opencode ses_123 --all
 ```
 
-`diff` separates semantic session differences from archive entry/SHA-256 differences. `verify` checks archive integrity, PortableSession structure, tool call/result pairing, attachments, agent relationships and optional nested provenance. `verify-transfer` reads the actual target session and reports preservation percentages per feature, including reasoning/thinking when requested.
+Fork embeds the complete parent archive as provenance. Merge keeps both branches without semantic deduplication and embeds both complete source archives. `diff` separates semantic differences from archive entry/SHA-256 differences. `verify-transfer` reports preservation percentages per feature, including reasoning/thinking when requested.
 
 ## Cross-platform cwd mapping
 
-Windows and Linux are normal runtime targets. The bridge only maps the `cwd` used for target import; it does not rewrite archived provider payloads.
-
-Automatic Windows/WSL conversion:
+Windows and Linux are normal runtime targets. The bridge maps only the `cwd` used for target import; archived provider payloads remain unchanged.
 
 ```bash
 ccbridge transfer claude codex <session-id> --target-profile wsl --dry-run
 ccbridge import ./session.ccbridge opencode --target-profile windows
-```
-
-Supported profiles are `native`, `windows`, `wsl`, and `linux`.
-
-Explicit prefix mappings are repeatable and take priority over profile conversion:
-
-```bash
 ccbridge transfer claude opencode <session-id> \
   --map-cwd 'C:\Users\me\Projects=/home/me/projects'
 ```
+
+Supported profiles are `native`, `windows`, `wsl`, and `linux`.
 
 ## Fidelity and strict mode
 
@@ -183,28 +163,39 @@ ccbridge fidelity claude opencode <session-id> --all
 ccbridge transfer <from> <to> <session> --strict-lossless
 ```
 
-Normal `--all` can transfer representable data while preserving the rest in the `.ccbridge` archive. Strict mode blocks target mutation when known source features cannot be represented directly.
+Normal `--all` transfers representable data while preserving the rest in the `.ccbridge` archive. Strict mode blocks target mutation when known source features cannot be represented directly.
 
-## External adapters
+## Persistent and one-off plugins
 
 ```bash
-ccbridge adapters --plugin @example/ccbridge-agent
+ccbridge plugins add @example/ccbridge-agent
+ccbridge plugins list
+ccbridge plugins disable @example/ccbridge-agent
+ccbridge plugins remove @example/ccbridge-agent
+
+ccbridge adapters --plugin ./local-adapter.js
 CCBRIDGE_PLUGINS=@example/a,./local-adapter.js ccbridge scan
 ```
 
-See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), [docs/ARCHIVE.md](docs/ARCHIVE.md), and [docs/ANTIGRAVITY.md](docs/ANTIGRAVITY.md).
+Persistent plugins are stored under `CCBRIDGE_HOME/plugins.json`. Plugin management does not run npm/pnpm automatically. Plugins are executable code; only load modules you trust.
 
-## Local stores
+See [docs/ADAPTERS.md](docs/ADAPTERS.md), [docs/PORTABLE_SESSION.md](docs/PORTABLE_SESSION.md), [docs/ARCHIVE.md](docs/ARCHIVE.md), [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), and [docs/ANTIGRAVITY.md](docs/ANTIGRAVITY.md).
+
+## Local stores / source artifacts
 
 ```text
 Claude Code:      ~/.claude/projects/**/*.jsonl
 Codex:            ~/.codex/sessions/**/*.jsonl
 Gemini CLI:       ~/.gemini/tmp/**/chats/*.{json,jsonl}
 Antigravity CLI:  ~/.gemini/antigravity-cli/conversations/*.db
+Aider:            .aider.chat.history.md (or AIDER_CHAT_HISTORY_FILE)
+Cline:            ~/.cline/data/sessions/<id>/<id>.messages.json
+Roo Code:         VS Code globalStorage/.../tasks/<id>/api_conversation_history.json
+Continue:         ~/.continue/*_session.md (explicit exported transcripts)
 ccbridge:         ~/.ccbridge/archives/*.ccbridge
 ```
 
-Environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `CCBRIDGE_ANTIGRAVITY_HOME`, `CCBRIDGE_HOME`, and `CCBRIDGE_PASSPHRASE`.
+Important environment overrides include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `CCBRIDGE_ANTIGRAVITY_HOME`, `AIDER_CHAT_HISTORY_FILE`, `CCBRIDGE_AIDER_ROOTS`, `CCBRIDGE_ROO_HOME`, `CCBRIDGE_CONTINUE_ROOTS`, `CCBRIDGE_HOME`, and `CCBRIDGE_PASSPHRASE`.
 
 ## Safety
 
@@ -212,4 +203,4 @@ Use `fidelity`, `plan`, `verify`, or `--dry-run` before mutation. Lossless archi
 
 ## Status
 
-Early development. Native session formats can change; adapters should prefer official import/export interfaces and fail explicitly rather than guessing unsupported private schemas.
+Early development. Native session formats can change; adapters prefer official/versioned import/export interfaces and fail explicitly rather than guessing unsupported private schemas.
