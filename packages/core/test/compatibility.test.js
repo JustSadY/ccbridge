@@ -76,3 +76,13 @@ test("built-in Claude contract is available without claiming tested versions", (
   assert.equal(contract.preserveUnknownRecords, true);
   assert.deepEqual(contract.testedVersions, []);
 });
+
+test("built-in Qwen contract declares tree, compression and subagent preservation", () => {
+  const contract = adapterCompatibilityContract({ id: "qwen-code" });
+  assert.deepEqual(contract.sourceFormats, ["qwen-code/session-jsonl"]);
+  assert.equal(contract.treeStructured, true);
+  assert.equal(contract.compressionAware, true);
+  assert.equal(contract.subagentTranscripts, true);
+  assert.equal(contract.preserveUnknownRecords, true);
+  assert.ok(contract.recordKindPrefixes.includes("record:system:"));
+});
