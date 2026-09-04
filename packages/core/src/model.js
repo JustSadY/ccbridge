@@ -9,6 +9,27 @@ export function normalizeTransferMode(mode = "portable") {
   return normalized;
 }
 
+export function createPortableAgent(input = {}) {
+  const id = String(input.id ?? "");
+  if (!id) throw new Error("Portable agent id is required");
+  return {
+    id,
+    parentId: input.parentId ? String(input.parentId) : null,
+    name: input.name ?? null,
+    kind: input.kind ?? "subagent",
+    startedAt: input.startedAt ?? null,
+    updatedAt: input.updatedAt ?? null,
+    source: {
+      adapter: String(input.source?.adapter ?? "unknown"),
+      sessionId: String(input.source?.sessionId ?? id),
+      path: input.source?.path ?? null
+    },
+    messages: Array.isArray(input.messages) ? input.messages : [],
+    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
+    events: Array.isArray(input.events) ? input.events : []
+  };
+}
+
 export function createPortableSession(input) {
   const session = {
     schemaVersion: PORTABLE_SESSION_VERSION,
@@ -23,6 +44,7 @@ export function createPortableSession(input) {
       path: input.source?.path ?? null
     },
     messages: Array.isArray(input.messages) ? input.messages : [],
+    agents: Array.isArray(input.agents) ? input.agents.map(createPortableAgent) : [],
     metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
     events: Array.isArray(input.events) ? input.events : [],
     lossless: input.lossless && typeof input.lossless === "object" ? input.lossless : null
@@ -33,30 +55,26 @@ export function createPortableSession(input) {
 }
 
 export function validatePortableSession(session) {
-  if (!session || typeof session !== "object") {
-    throw new TypeError("Portable session must be an object");
-  }
-  if (session.schemaVersion !== PORTABLE_SESSION_VERSION) {
-    throw new Error(`Unsupported portable session schema: ${session.schemaVersion}`);
-  }
-  if (!session.id) {
-    throw new Error("Portable session id is required");
-  }
-  if (!session.source?.adapter) {
-    throw new Error("Portable session source.adapter is required");
-  }
-  if (!Array.isArray(session.messages)) {
-    throw new Error("Portable session messages must be an array");
-  }
-  if (!Array.isArray(session.events)) {
-    throw new Error("Portable session events must be an array");
+  if (!session || typeof session !== "object") throw new TypeError("Portable session must be an object");
+  if (session.schemaVersion !== PORTABLE_SESSION_VERSION) throw new Error(`Unsupported portable session schema: ${session.schemaVersion}`);
+  if (!session.id) throw new Error("Portable session id is required");
+  if (!session.source?.adapter) throw new Error("Portable session source.adapter is required");
+  if (!Array.isArray(session.messages)) throw new Error("Portable session messages must be an array");
+  if (!Array.isArray(session.events)) throw new Error("Portable session events must be an array");
+  if (!Array.isArray(session.agents)) throw new Error("Portable session agents must be an array");
+
+  const ids = new Set();
+  for (const agent of session.agents) {
+    if (!agent?.id) throw new Error("Portable agent id is required");
+    if (ids.has(agent.id)) throw new Error(`Duplicate portable agent id: ${agent.id}`);
+    ids.add(agent.id);
+    if (!Array.isArray(agent.messages)) throw new Error(`Portable agent ${agent.id} messages must be an array`);
+    if (!Array.isArray(agent.events)) throw new Error(`Portable agent ${agent.id} events must be an array`);
   }
   return session;
 }
 
-export function textContent(text) {
-  return { type: "text", text: String(text) };
-}
+export function textContent(text) { return { type: "text", text: String(text) }; }
 
 export function attachmentContent({ name = null, mimeType = "application/octet-stream", path = null, uri = null, data = null, encoding = null, size = null, sha256 = null, archiveEntry = null, metadata = null } = {}) {
   return {
@@ -75,41 +93,9 @@ export function attachmentContent({ name = null, mimeType = "application/octet-s
 }
 
 export function reasoningContent({ provider, text = null, summary = null, signature = null, encrypted = null, raw = null }) {
-  return {
-    type: "reasoning",
-    provider: provider ?? "unknown",
-    text: typeof text === "string" ? text : null,
-    summary: summary ?? null,
-    signature: signature ?? null,
-    encrypted: encrypted ?? null,
-    raw: raw ?? null
-  };
+  return { type: "reasoning", provider: provider ?? "unknown", text: typeof text === "string" ? text : null, summary: summary ?? null, signature: signature ?? null, encrypted: encrypted ?? null, raw: raw ?? null };
 }
 
-export function toolCallContent({ id, name, input }) {
-  return {
-    type: "tool-call",
-    id: id ?? null,
-    name: name ?? "unknown",
-    input: input ?? null
-  };
-}
-
-export function toolResultContent({ callId, output, isError = false }) {
-  return {
-    type: "tool-result",
-    callId: callId ?? null,
-    output: output ?? null,
-    isError: Boolean(isError)
-  };
-}
-
-export function rawEvent({ index, provider, kind, timestamp = null, data }) {
-  return {
-    index,
-    provider: provider ?? "unknown",
-    kind: kind ?? "unknown",
-    timestamp,
-    data
-  };
-}
+export function toolCallContent({ id, name, input }) { return { type: "tool-call", id: id ?? null, name: name ?? "unknown", input: input ?? null }; }
+export function toolResultContent({ callId, output, isError = false }) { return { type: "tool-result", callId: callId ?? null, output: output ?? null, isError: Boolean(isError) }; }
+export function rawEvent({ index, provider, kind, timestamp = null, data }) { return { index, provider: provider ?? "unknown", kind: kind ?? "unknown", timestamp, data }; }
