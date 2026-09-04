@@ -2,24 +2,24 @@
 
 Cross-agent local session bridge for coding assistants.
 
-The project starts with Claude Code and OpenAI Codex, but the core is adapter-based and is designed for additional local agents without coupling them to Claude/Codex schemas.
+Claude Code and OpenAI Codex are the first built-in adapters. The transfer engine itself is provider-neutral and is designed for additional agents such as Gemini CLI, Cursor, OpenCode, Aider and others.
 
 ## Repository layout
 
 ```text
 packages/
-  core/   reusable discovery, parsers, portable model, adapter registry, transfer engine
+  core/   adapter SDK, discovery, portable model, plugin loader, route planner
   cli/    command-line interface only
 ```
 
-## Current support
+## Current built-ins
 
-| Adapter | Discover | Read | Import target |
+| Adapter | Discover | Read | Native import target |
 | --- | --- | --- | --- |
-| Claude Code | yes | yes | not yet |
-| OpenAI Codex | yes | yes | Claude/external session via Codex app-server |
+| Claude Code | yes | yes | no |
+| OpenAI Codex | yes | yes | Claude Code session JSONL via Codex app-server |
 
-The Codex target uses `codex app-server` and `externalAgentConfig/import`; it does not write Codex SQLite state directly.
+The Codex target uses `codex app-server` and `externalAgentConfig/import`; ccbridge does not write Codex SQLite state directly.
 
 ## Install from source
 
@@ -37,6 +37,7 @@ ccbridge doctor
 ccbridge list claude
 ccbridge list codex
 ccbridge inspect claude <session-id>
+ccbridge plan claude codex <session-id>
 ccbridge transfer claude codex <session-id> --dry-run
 ccbridge transfer claude codex <session-id>
 ```
@@ -47,9 +48,43 @@ A direct JSONL path is also accepted:
 ccbridge transfer claude codex ~/.claude/projects/<project>/<session>.jsonl --cwd /path/to/project
 ```
 
+## External adapters
+
+Third-party adapters can be loaded without modifying this repository:
+
+```bash
+ccbridge adapters --plugin @example/ccbridge-gemini
+ccbridge list gemini --plugin @example/ccbridge-gemini
+ccbridge transfer gemini codex <session-id> --plugin @example/ccbridge-gemini
+```
+
+Multiple adapter packages can be loaded with repeated `--plugin` flags or with:
+
+```bash
+CCBRIDGE_PLUGINS=@example/ccbridge-gemini,./local-adapter.js ccbridge adapters
+```
+
+See [docs/ADAPTERS.md](docs/ADAPTERS.md) for the adapter/plugin contract.
+
+## Transfer routing
+
+Transfers are planned generically:
+
+```text
+source adapter
+    |
+    +-- compatible native format --> target native importer
+    |
+    +-- PortableSession -----------> target portable writer
+    |
+    `-- no compatible route -------> explicit error
+```
+
+Native import is selected only when the target explicitly accepts the source artifact format. This avoids accidental cross-imports between unrelated agents.
+
 ## Local stores
 
-Defaults:
+Built-in defaults:
 
 ```text
 Claude Code: ~/.claude/projects/**/*.jsonl
@@ -58,17 +93,20 @@ Codex:       ~/.codex/sessions/**/*.jsonl
 
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected.
 
-Windows, Linux and WSL are treated as separate runtime profiles. The core includes path normalization helpers for Windows verbatim paths and Windows/WSL mount conversion.
+Windows and Linux are supported runtime targets. Platform-specific handling is limited to filesystem/storage differences; the portable session and transfer architecture are operating-system agnostic.
 
 ## Portable model
 
 Native session formats are parsed into a provider-neutral model containing visible text, tool calls and tool results. Provider-specific private reasoning/signatures are intentionally not transferred.
 
-See [docs/ADAPTERS.md](docs/ADAPTERS.md) for the extension model.
-
 ## Safety
 
-`transfer --dry-run` resolves the source and target route without modifying target session state. Use it before importing important sessions.
+Use either command to inspect the route before an import:
+
+```bash
+ccbridge plan <from> <to> <session>
+ccbridge transfer <from> <to> <session> --dry-run
+```
 
 ## Status
 
