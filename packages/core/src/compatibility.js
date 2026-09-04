@@ -44,6 +44,16 @@ const BUILTIN_CONTRACTS = {
     preserveUnknownRecords: true,
     opaque: true,
     testedVersions: []
+  },
+  aider: {
+    contractVersion: 1,
+    sourceFormats: ["aider/chat-history-markdown-v1"],
+    recordKinds: ["markdown-section"],
+    recordKindPrefixes: [],
+    contentTypes: ["text"],
+    preserveUnknownRecords: true,
+    presentationOriented: true,
+    testedVersions: []
   }
 };
 
@@ -143,7 +153,7 @@ export async function checkAdapterCompatibility(adapter, options = {}) {
     messageCount: (session.messages?.length ?? 0) + (session.agents ?? []).reduce((sum, agent) => sum + (agent.messages?.length ?? 0), 0),
     agentCount: session.agents?.length ?? 0,
     driftDetected,
-    note: unknownRecordKinds.length && contract?.preserveUnknownRecords ? "Unknown raw records are preserved losslessly, but semantic parsing coverage should be reviewed." : null
+    note: unknownRecordKinds.length && contract?.preserveUnknownRecords ? "Unknown raw records are preserved losslessly, but semantic parsing coverage should be reviewed." : contract?.presentationOriented ? "Source history is presentation-oriented; semantic role classification is best-effort while the raw section is preserved." : null
   };
   return report;
 }
