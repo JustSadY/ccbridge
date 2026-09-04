@@ -80,3 +80,40 @@ test("subagent message content participates in strict portable fidelity", () => 
   assert.equal(report.features.find((item) => item.feature === "reasoning").target, "not-represented");
   assert.equal(report.features.find((item) => item.feature === "rawEvent").target, "not-represented");
 });
+
+test("nested session, message and agent metadata participates in portable fidelity", () => {
+  const session = {
+    messages: [{
+      role: "user",
+      content: [{ type: "text", text: "root" }],
+      metadata: { qwenRecord: { forkedFrom: { sessionId: "parent", messageUuid: "m1" } } }
+    }],
+    agents: [{
+      id: "agent-1",
+      metadata: { qwenForkBootstrap: { enabled: true } },
+      messages: [{
+        role: "assistant",
+        content: [{ type: "text", text: "agent answer" }],
+        metadata: { qwenRecord: { agentRunId: "run-1", agentRound: 2 } }
+      }],
+      events: []
+    }],
+    events: [],
+    metadata: { cliVersion: "0.9.0" }
+  };
+  const target = { portableSupport: { text: true, subagent: true, metadata: false } };
+  const features = analyzeSessionFeatures(session);
+  assert.equal(features.text, 2);
+  assert.equal(features.subagent, 1);
+  assert.equal(features.metadata, 4);
+
+  const report = evaluatePortableFidelity(session, target, { losslessArchive: true });
+  assert.equal(report.totalItems, 7);
+  assert.equal(report.directItems, 3);
+  assert.equal(report.targetPercent, 43);
+  assert.equal(report.archivePercent, 100);
+  const metadata = report.features.find((item) => item.feature === "metadata");
+  assert.equal(metadata.count, 4);
+  assert.equal(metadata.target, "not-represented");
+  assert.equal(metadata.archive, "bundle-only");
+});
