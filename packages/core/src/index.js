@@ -14,6 +14,7 @@ export { OpenCodeAdapter } from "./adapters/opencode.js";
 export { AntigravityCliAdapter } from "./adapters/antigravity.js";
 export { SessionBridge } from "./bridge.js";
 export { analyzeSessionFeatures, evaluatePortableFidelity, nativeFidelityReport } from "./fidelity.js";
+export { diffCcbridgeArchives, diffPortableSessions } from "./diff.js";
 export { adapterAcceptsNativeArtifact, adapterCapabilities, nativeArtifactFormat, normalizeAdapterId, validateAdapter } from "./adapters/contract.js";
 export { loadAdapterModule, registerAdapterModule, registerAdapterModules } from "./adapters/loader.js";
 export { CodexAppServerClient } from "./codex/app-server-client.js";
