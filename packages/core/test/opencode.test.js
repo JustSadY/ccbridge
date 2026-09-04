@@ -25,13 +25,16 @@ test("reads OpenCode sessions through official CLI JSON", async () => {
   assert.deepEqual(lossless.messages[1].content.map((part) => part.type), ["reasoning", "tool-call", "tool-result"]);
 });
 
-test("exports and imports OpenCode native session JSON through CLI", async () => {
+test("exports and imports OpenCode native session JSON through CLI as a remapped route", async () => {
   const adapter = new OpenCodeAdapter({ runner: mockRunner });
   const artifact = await adapter.getNativeArtifact("ses_1");
   assert.equal(artifact.format, "opencode/session-json");
   assert.ok(artifact.content.includes('"messages"'));
+  assert.deepEqual(adapter.losslessNativeImports, []);
+  assert.equal(adapter.nativeImportPreservation["opencode/session-json"], "remapped");
   const result = await adapter.importNativeArtifact(artifact, { cwd: "/tmp/project" });
   assert.equal(result.sessionId, "ses_1");
+  assert.equal(result.preservation, "remapped");
 });
 
 test("writes PortableSession through the official OpenCode import format", async () => {
@@ -54,6 +57,7 @@ test("writes PortableSession through the official OpenCode import format", async
   };
   const result = await adapter.writePortableSession(session, { cwd: "/tmp/project" });
   assert.ok(result.sessionId.startsWith("ses_"));
+  assert.equal(result.preservation, "portable");
   assert.ok(importedPayload.info.id.startsWith("ses_"));
   assert.equal(importedPayload.info.metadata.ccbridgeSourceAdapter, "claude-code");
   assert.equal(importedPayload.messages.length, 2);
