@@ -11,6 +11,7 @@ export function defaultCodexHome({ env = process.env, home = os.homedir() } = {}
 export function defaultGeminiHome({ env = process.env, home = os.homedir() } = {}) { return path.join(env.GEMINI_CLI_HOME || home, ".gemini"); }
 export function defaultQwenHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_HOME || path.join(home, ".qwen")); }
 export function defaultQwenRuntimeHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_RUNTIME_DIR || defaultQwenHome({ env, home })); }
+export function defaultKiroHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.KIRO_HOME || path.join(home, ".kiro")); }
 export function defaultAntigravityCliHome({ env = process.env, home = os.homedir() } = {}) { return env.CCBRIDGE_ANTIGRAVITY_HOME || path.join(home, ".gemini", "antigravity-cli"); }
 
 export function normalizePathKey(input, platform = process.platform) {
