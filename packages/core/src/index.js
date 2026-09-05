@@ -3,6 +3,7 @@ import { ClaudeCodeAdapter } from "./adapters/claude.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { GeminiCliAdapter } from "./adapters/gemini.js";
 import { QwenCodeAdapter } from "./adapters/qwen-resume.js";
+import { KiroCliAdapter } from "./adapters/kiro.js";
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import { AntigravityCliAdapter } from "./adapters/antigravity.js";
 import { AiderAdapter } from "./adapters/aider.js";
@@ -21,6 +22,7 @@ export { ClaudeCodeAdapter } from "./adapters/claude.js";
 export { CodexAdapter } from "./adapters/codex.js";
 export { GeminiCliAdapter } from "./adapters/gemini.js";
 export { QwenCodeAdapter } from "./adapters/qwen-resume.js";
+export { KiroCliAdapter } from "./adapters/kiro.js";
 export { OpenCodeAdapter } from "./adapters/opencode.js";
 export { AntigravityCliAdapter } from "./adapters/antigravity.js";
 export { AiderAdapter } from "./adapters/aider.js";
@@ -48,8 +50,8 @@ export { CodexAppServerClient } from "./codex/app-server-client.js";
 export { attachmentContent, createPortableAgent, createPortableSession, normalizeTransferMode, rawEvent, reasoningContent, textContent, toolCallContent, toolResultContent, TRANSFER_MODES, validatePortableSession, PORTABLE_SESSION_VERSION } from "./model.js";
 export { CCBRIDGE_ARCHIVE_FORMAT, CCBRIDGE_ARCHIVE_VERSION, defaultCcbridgeHome, LEGACY_LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_FORMAT, LOSSLESS_BUNDLE_VERSION, materializeCcbridgeAttachments, materializeCcbridgeNative, readCcbridgeArchive, validateCcbridgeArchive, writeCcbridgeArchive, writeLosslessBundle } from "./lossless/archive.js";
 export { extractProvenanceArchive, forkCcbridgeArchive, forkPortableSession, mergeCcbridgeArchives, mergePortableSessions } from "./session-ops.js";
-export { detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, defaultQwenHome, defaultQwenRuntimeHome, defaultAntigravityCliHome, normalizePathKey, windowsPathToWsl, wslPathToWindows } from "./platform/paths.js";
+export { detectRuntime, defaultClaudeHome, defaultCodexHome, defaultGeminiHome, defaultQwenHome, defaultQwenRuntimeHome, defaultKiroHome, defaultAntigravityCliHome, normalizePathKey, windowsPathToWsl, wslPathToWindows } from "./platform/paths.js";
 export { TARGET_PROFILES, applyCwdMappings, normalizeCwdMappings, parseCwdMapping, resolveTargetCwd, resolveTargetCwdDetailed } from "./platform/cwd-map.js";
-export function createDefaultRegistry(options = {}) { const registry = new AdapterRegistry(); registry.register(new ClaudeCodeAdapter(options.claude)); registry.register(new CodexAdapter(options.codex)); registry.register(new GeminiCliAdapter(options.gemini)); registry.register(new QwenCodeAdapter(options.qwen)); registry.register(new OpenCodeAdapter(options.opencode)); registry.register(new AntigravityCliAdapter(options.antigravity)); registry.register(new AiderAdapter(options.aider)); registry.register(new ClineAdapter(options.cline)); registry.register(new RooCodeAdapter(options.roo)); registry.register(new ContinueAdapter(options.continue)); registry.register(new CursorAdapter(options.cursor)); registry.register(new VsCodeChatAdapter(options.vscodeChat)); registry.register(new GooseAdapter(options.goose)); registry.register(new PiAdapter(options.pi)); registry.register(new KiloCodeAdapter(options.kilo)); return registry; }
+export function createDefaultRegistry(options = {}) { const registry = new AdapterRegistry(); registry.register(new ClaudeCodeAdapter(options.claude)); registry.register(new CodexAdapter(options.codex)); registry.register(new GeminiCliAdapter(options.gemini)); registry.register(new QwenCodeAdapter(options.qwen)); registry.register(new KiroCliAdapter(options.kiro)); registry.register(new OpenCodeAdapter(options.opencode)); registry.register(new AntigravityCliAdapter(options.antigravity)); registry.register(new AiderAdapter(options.aider)); registry.register(new ClineAdapter(options.cline)); registry.register(new RooCodeAdapter(options.roo)); registry.register(new ContinueAdapter(options.continue)); registry.register(new CursorAdapter(options.cursor)); registry.register(new VsCodeChatAdapter(options.vscodeChat)); registry.register(new GooseAdapter(options.goose)); registry.register(new PiAdapter(options.pi)); registry.register(new KiloCodeAdapter(options.kilo)); return registry; }
 export function createDefaultBridge(options = {}) { return new SessionBridge(createDefaultRegistry(options)); }
 export async function createBridgeWithPlugins(options = {}) { const registry = createDefaultRegistry(options); await registerAdapterModules(registry, options.plugins ?? [], options.pluginOptions ?? {}); return new SessionBridge(registry); }
