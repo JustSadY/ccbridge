@@ -11,7 +11,7 @@ function row(matrix, from, to) {
 test("static route matrix describes native and portable priorities without reading sessions", () => {
   const bridge = createDefaultBridge();
   const matrix = bridge.routes();
-  assert.equal(matrix.adapterCount, 15);
+  assert.equal(matrix.adapterCount, 16);
 
   const claudeCodex = row(matrix, "claude-code", "codex");
   assert.equal(claudeCodex.route, "native");
@@ -27,6 +27,20 @@ test("static route matrix describes native and portable priorities without readi
   assert.equal(qwenOpenCode.portable, true);
   assert.equal(qwenOpenCode.preservation.targetClass, "portable");
   assert.equal(qwenOpenCode.lossless.route, "portable+archive");
+
+  const kiroOpenCode = row(matrix, "kiro-cli", "opencode");
+  assert.equal(kiroOpenCode.route, "portable");
+  assert.equal(kiroOpenCode.portable, true);
+  assert.equal(kiroOpenCode.preservation.targetClass, "portable");
+  assert.equal(kiroOpenCode.lossless.route, "portable+archive");
+
+  const kiroKilo = row(matrix, "kiro-cli", "kilo-code");
+  assert.equal(kiroKilo.route, "portable");
+  assert.equal(kiroKilo.portable, true);
+
+  const opencodeKiro = row(matrix, "opencode", "kiro-cli");
+  assert.equal(opencodeKiro.route, "none");
+  assert.equal(opencodeKiro.portable, false);
 
   const antigravityOpenCode = row(matrix, "antigravity-cli", "opencode");
   assert.equal(antigravityOpenCode.route, "none");
@@ -91,4 +105,8 @@ test("route matrix filters by aliases and canonicalizes adapter ids", () => {
   assert.equal(matrix.to, "goose");
   assert.equal(matrix.rows.length, 1);
   assert.equal(matrix.rows[0].route, "native");
+
+  const kiro = bridge.routes({ from: "kiro", to: "opencode" });
+  assert.equal(kiro.from, "kiro-cli");
+  assert.equal(kiro.rows[0].route, "portable");
 });
