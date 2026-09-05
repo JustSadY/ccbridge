@@ -5,6 +5,8 @@ import {
   defaultGeminiHome,
   defaultQwenHome,
   defaultQwenRuntimeHome,
+  defaultKiroHome,
+  defaultKimiCodeHome,
   normalizePathKey,
   windowsPathToWsl,
   wslPathToWindows
@@ -37,4 +39,14 @@ test("Qwen home defaults to .qwen and honors QWEN_HOME", () => {
 test("Qwen runtime home defaults to Qwen home and QWEN_RUNTIME_DIR wins", () => {
   assert.equal(defaultQwenRuntimeHome({ env: { QWEN_HOME: "/data/qwen-home" }, home: "/home/example" }), path.resolve("/data/qwen-home"));
   assert.equal(defaultQwenRuntimeHome({ env: { QWEN_HOME: "/data/qwen-home", QWEN_RUNTIME_DIR: "/runtime/qwen" }, home: "/home/example" }), path.resolve("/runtime/qwen"));
+});
+
+test("Kiro home defaults to .kiro and honors KIRO_HOME", () => {
+  assert.equal(defaultKiroHome({ env: {}, home: "/home/example" }), path.resolve("/home/example/.kiro"));
+  assert.equal(defaultKiroHome({ env: { KIRO_HOME: "/data/kiro" }, home: "/home/example" }), path.resolve("/data/kiro"));
+});
+
+test("Kimi Code home defaults to .kimi-code and honors KIMI_CODE_HOME", () => {
+  assert.equal(defaultKimiCodeHome({ env: {}, home: "/home/example" }), path.resolve("/home/example/.kimi-code"));
+  assert.equal(defaultKimiCodeHome({ env: { KIMI_CODE_HOME: "/data/kimi" }, home: "/home/example" }), path.resolve("/data/kimi"));
 });
