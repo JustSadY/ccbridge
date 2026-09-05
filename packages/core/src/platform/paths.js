@@ -12,6 +12,7 @@ export function defaultGeminiHome({ env = process.env, home = os.homedir() } = {
 export function defaultQwenHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_HOME || path.join(home, ".qwen")); }
 export function defaultQwenRuntimeHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.QWEN_RUNTIME_DIR || defaultQwenHome({ env, home })); }
 export function defaultKiroHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.KIRO_HOME || path.join(home, ".kiro")); }
+export function defaultKimiCodeHome({ env = process.env, home = os.homedir() } = {}) { return path.resolve(env.KIMI_CODE_HOME || path.join(home, ".kimi-code")); }
 export function defaultAntigravityCliHome({ env = process.env, home = os.homedir() } = {}) { return env.CCBRIDGE_ANTIGRAVITY_HOME || path.join(home, ".gemini", "antigravity-cli"); }
 
 export function normalizePathKey(input, platform = process.platform) {
