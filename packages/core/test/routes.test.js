@@ -11,7 +11,7 @@ function row(matrix, from, to) {
 test("static route matrix describes native and portable priorities without reading sessions", () => {
   const bridge = createDefaultBridge();
   const matrix = bridge.routes();
-  assert.equal(matrix.adapterCount, 16);
+  assert.equal(matrix.adapterCount, 17);
 
   const claudeCodex = row(matrix, "claude-code", "codex");
   assert.equal(claudeCodex.route, "native");
@@ -33,6 +33,20 @@ test("static route matrix describes native and portable priorities without readi
   assert.equal(kiroOpenCode.portable, true);
   assert.equal(kiroOpenCode.preservation.targetClass, "portable");
   assert.equal(kiroOpenCode.lossless.route, "portable+archive");
+
+  const kimiOpenCode = row(matrix, "kimi-code", "opencode");
+  assert.equal(kimiOpenCode.route, "portable");
+  assert.equal(kimiOpenCode.portable, true);
+  assert.equal(kimiOpenCode.preservation.targetClass, "portable");
+  assert.equal(kimiOpenCode.lossless.route, "portable+archive");
+
+  const kimiKilo = row(matrix, "kimi-code", "kilo-code");
+  assert.equal(kimiKilo.route, "portable");
+  assert.equal(kimiKilo.portable, true);
+
+  const opencodeKimi = row(matrix, "opencode", "kimi-code");
+  assert.equal(opencodeKimi.route, "none");
+  assert.equal(opencodeKimi.portable, false);
 
   const kiroKilo = row(matrix, "kiro-cli", "kilo-code");
   assert.equal(kiroKilo.route, "portable");
@@ -109,4 +123,8 @@ test("route matrix filters by aliases and canonicalizes adapter ids", () => {
   const kiro = bridge.routes({ from: "kiro", to: "opencode" });
   assert.equal(kiro.from, "kiro-cli");
   assert.equal(kiro.rows[0].route, "portable");
+
+  const kimi = bridge.routes({ from: "kimi-cli", to: "opencode" });
+  assert.equal(kimi.from, "kimi-code");
+  assert.equal(kimi.rows[0].route, "portable");
 });
